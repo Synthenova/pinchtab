@@ -280,6 +280,7 @@ func TestFileConfigJSONPreservesExplicitZeroValues(t *testing.T) {
 	fc := DefaultFileConfig()
 	fc.Server.Bind = ""
 	fc.Browser.ExtensionPaths = []string{}
+	fc.Browser.ProxyURL = ""
 	fc.InstanceDefaults.UserAgent = ""
 	fc.Security.IDPI.StrictMode = false
 	fc.Security.IDPI.AllowedDomains = []string{}
@@ -306,6 +307,9 @@ func TestFileConfigJSONPreservesExplicitZeroValues(t *testing.T) {
 		t.Fatal("browser.extensionPaths missing from JSON")
 	} else if items, ok := ext.([]any); !ok || len(items) != 0 {
 		t.Fatalf("browser.extensionPaths = %#v, want explicit empty list", ext)
+	}
+	if proxyURL, ok := browser["proxyUrl"]; !ok || proxyURL != "" {
+		t.Fatalf("browser.proxyUrl = %#v, want explicit empty string", proxyURL)
 	}
 
 	security := raw["security"].(map[string]any)

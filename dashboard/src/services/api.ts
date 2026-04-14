@@ -183,6 +183,7 @@ export interface UpdateProfileRequest {
   name?: string;
   useWhen?: string;
   description?: string;
+  backend?: Profile["backend"];
 }
 
 export interface UpdateProfileResponse {

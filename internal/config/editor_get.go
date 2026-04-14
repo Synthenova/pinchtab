@@ -67,6 +67,8 @@ func getBrowserField(b *BrowserConfig, field string) (string, error) {
 		return b.ChromeBinary, nil
 	case "extraFlags":
 		return b.ChromeExtraFlags, nil
+	case "proxyUrl":
+		return b.ProxyURL, nil
 	default:
 		return "", fmt.Errorf("unknown field browser.%s", field)
 	}

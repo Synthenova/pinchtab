@@ -38,6 +38,51 @@ func TestDoubleClickAction_UsesCoordinatePathIncludingZeroZero(t *testing.T) {
 	}
 }
 
+func TestDoubleClickAction_HumanCoordinatePathIncludingZeroZero(t *testing.T) {
+	b := New(context.TODO(), nil, &config.RuntimeConfig{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := b.Actions[ActionDoubleClick](ctx, ActionRequest{Human: true, HasXY: true, X: 0, Y: 0})
+	if err == nil {
+		t.Fatal("expected error from cancelled context")
+	}
+	if strings.Contains(err.Error(), "need selector") {
+		t.Fatalf("expected human coordinate path, got selector/ref validation error: %v", err)
+	}
+}
+
+func TestHumanClickAlias_UsesCoordinatePath(t *testing.T) {
+	b := New(context.TODO(), nil, &config.RuntimeConfig{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := b.Actions[ActionHumanClick](ctx, ActionRequest{HasXY: true, X: 12.5, Y: 34.5})
+	if err == nil {
+		t.Fatal("expected error from cancelled context")
+	}
+	if strings.Contains(err.Error(), "need selector") {
+		t.Fatalf("expected coordinate path, got selector/ref validation error: %v", err)
+	}
+}
+
+func TestHumanDoubleClickAlias_UsesCoordinatePath(t *testing.T) {
+	b := New(context.TODO(), nil, &config.RuntimeConfig{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := b.Actions[ActionHumanDoubleClick](ctx, ActionRequest{HasXY: true, X: 12.5, Y: 34.5})
+	if err == nil {
+		t.Fatal("expected error from cancelled context")
+	}
+	if strings.Contains(err.Error(), "need selector") {
+		t.Fatalf("expected coordinate path, got selector/ref validation error: %v", err)
+	}
+}
+
 func TestHoverAction_UsesCoordinatePath(t *testing.T) {
 	b := New(context.TODO(), nil, &config.RuntimeConfig{})
 
@@ -45,6 +90,36 @@ func TestHoverAction_UsesCoordinatePath(t *testing.T) {
 	cancel()
 
 	_, err := b.Actions[ActionHover](ctx, ActionRequest{HasXY: true, X: 12.5, Y: 34.5})
+	if err == nil {
+		t.Fatal("expected error from cancelled context")
+	}
+	if strings.Contains(err.Error(), "need selector") {
+		t.Fatalf("expected coordinate path, got selector/ref validation error: %v", err)
+	}
+}
+
+func TestHoverAction_HumanCoordinatePath(t *testing.T) {
+	b := New(context.TODO(), nil, &config.RuntimeConfig{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := b.Actions[ActionHover](ctx, ActionRequest{Human: true, HasXY: true, X: 12.5, Y: 34.5})
+	if err == nil {
+		t.Fatal("expected error from cancelled context")
+	}
+	if strings.Contains(err.Error(), "need selector") {
+		t.Fatalf("expected human coordinate path, got selector/ref validation error: %v", err)
+	}
+}
+
+func TestHumanHoverAlias_UsesCoordinatePath(t *testing.T) {
+	b := New(context.TODO(), nil, &config.RuntimeConfig{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := b.Actions[ActionHumanHover](ctx, ActionRequest{HasXY: true, X: 12.5, Y: 34.5})
 	if err == nil {
 		t.Fatal("expected error from cancelled context")
 	}
@@ -131,6 +206,47 @@ func TestScrollAction_UsesViewportCenterWhenCoordinatesMissing(t *testing.T) {
 	}
 	if result["x"] != 0 || result["y"] != 800 {
 		t.Fatalf("unexpected result payload: %#v", result)
+	}
+}
+
+func TestScrollAction_HumanCoordinateWheelPath(t *testing.T) {
+	b := New(context.TODO(), nil, &config.RuntimeConfig{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := b.Actions[ActionScroll](ctx, ActionRequest{
+		Human:   true,
+		HasXY:   true,
+		X:       12.5,
+		Y:       34.5,
+		ScrollY: 50,
+	})
+	if err == nil {
+		t.Fatal("expected error from cancelled context")
+	}
+	if strings.Contains(err.Error(), "need selector") {
+		t.Fatalf("expected human scroll path, got selector/ref validation error: %v", err)
+	}
+}
+
+func TestHumanScrollAlias_UsesCoordinateWheelPath(t *testing.T) {
+	b := New(context.TODO(), nil, &config.RuntimeConfig{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := b.Actions[ActionHumanScroll](ctx, ActionRequest{
+		HasXY:   true,
+		X:       12.5,
+		Y:       34.5,
+		ScrollY: 50,
+	})
+	if err == nil {
+		t.Fatal("expected error from cancelled context")
+	}
+	if strings.Contains(err.Error(), "need selector") {
+		t.Fatalf("expected coordinate wheel path, got selector/ref validation error: %v", err)
 	}
 }
 

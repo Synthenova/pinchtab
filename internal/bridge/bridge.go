@@ -88,11 +88,12 @@ func New(allocCtx, browserCtx context.Context, cfg *config.RuntimeConfig) *Bridg
 	}
 	b.ensureStealthBundle()
 	// Only initialize TabManager if browserCtx is provided (not lazy-init case)
+	attachedExternal := cfg != nil && cfg.ExternalBrowserWSURL != ""
 	if cfg != nil && browserCtx != nil {
 		b.TabManager = NewTabManager(browserCtx, cfg, idMgr, logStore, b.tabSetup)
 		b.SetDialogManager(b.Dialogs)
 		b.SetNetworkMonitor(b.netMonitor)
-		if !b.quietStealthObservers() {
+		if !attachedExternal && !b.quietStealthObservers() {
 			b.StartBrowserGuards()
 		}
 	}
@@ -154,10 +155,13 @@ func (b *Bridge) applyTargetStealth(ctx context.Context) {
 }
 
 func (b *Bridge) tabSetup(ctx context.Context) {
+	if b.Config != nil && b.Config.ExternalBrowserWSURL != "" {
+		return
+	}
 	b.applyTargetStealth(ctx)
 	b.installWorkerStealthParity(ctx)
 	b.injectStealth(ctx)
-	if b.Config.NoAnimations {
+	if b.Config != nil && b.Config.NoAnimations {
 		if err := b.InjectNoAnimations(ctx); err != nil {
 			slog.Warn("no-animations injection failed", "err", err)
 		}
@@ -253,27 +257,30 @@ func (b *Bridge) EnsureChrome(cfg *config.RuntimeConfig) error {
 	}
 
 	slog.Debug("ensure chrome called", "headless", cfg.Headless, "profile", cfg.ProfileDir)
+	attachedExternal := cfg.ExternalBrowserWSURL != ""
 
 	// Initialize Chrome if not already done
-	if err := AcquireProfileLock(cfg.ProfileDir); err != nil {
-		if cfg.Headless {
-			// If we are in headless mode, we are more flexible.
-			// Instead of failing, we can use a unique temporary profile dir.
-			uniqueDir, tmpErr := os.MkdirTemp("", "pinchtab-profile-*")
-			if tmpErr == nil {
-				slog.Warn("profile in use; using unique temporary profile for headless instance",
-					"requested", cfg.ProfileDir, "using", uniqueDir, "reason", err.Error())
-				cfg.ProfileDir = uniqueDir
-				b.tempProfileDir = uniqueDir
-				// Re-acquire lock for the new temp dir (should always succeed)
-				_ = AcquireProfileLock(cfg.ProfileDir)
+	if !attachedExternal {
+		if err := AcquireProfileLock(cfg.ProfileDir); err != nil {
+			if cfg.Headless {
+				// If we are in headless mode, we are more flexible.
+				// Instead of failing, we can use a unique temporary profile dir.
+				uniqueDir, tmpErr := os.MkdirTemp("", "pinchtab-profile-*")
+				if tmpErr == nil {
+					slog.Warn("profile in use; using unique temporary profile for headless instance",
+						"requested", cfg.ProfileDir, "using", uniqueDir, "reason", err.Error())
+					cfg.ProfileDir = uniqueDir
+					b.tempProfileDir = uniqueDir
+					// Re-acquire lock for the new temp dir (should always succeed)
+					_ = AcquireProfileLock(cfg.ProfileDir)
+				} else {
+					slog.Error("cannot acquire profile lock and failed to create temp dir", "profile", cfg.ProfileDir, "err", err.Error(), "tmpErr", tmpErr.Error())
+					return fmt.Errorf("profile lock: %w (temp dir failed: %v)", err, tmpErr)
+				}
 			} else {
-				slog.Error("cannot acquire profile lock and failed to create temp dir", "profile", cfg.ProfileDir, "err", err.Error(), "tmpErr", tmpErr.Error())
-				return fmt.Errorf("profile lock: %w (temp dir failed: %v)", err, tmpErr)
+				slog.Error("cannot acquire profile lock; another pinchtab may be active", "profile", cfg.ProfileDir, "err", err.Error())
+				return fmt.Errorf("profile lock: %w", err)
 			}
-		} else {
-			slog.Error("cannot acquire profile lock; another pinchtab may be active", "profile", cfg.ProfileDir, "err", err.Error())
-			return fmt.Errorf("profile lock: %w", err)
 		}
 	}
 
@@ -302,7 +309,7 @@ func (b *Bridge) EnsureChrome(cfg *config.RuntimeConfig) error {
 		b.TabManager = NewTabManager(browserCtx, b.Config, b.IdMgr, b.LogStore, b.tabSetup)
 		b.SetDialogManager(b.Dialogs)
 		b.SetNetworkMonitor(b.netMonitor)
-		if !b.quietStealthObservers() {
+		if !attachedExternal && !b.quietStealthObservers() {
 			b.StartBrowserGuards()
 		}
 	}
@@ -313,12 +320,12 @@ func (b *Bridge) EnsureChrome(cfg *config.RuntimeConfig) error {
 	}
 
 	// Restore tabs from previous session (if any saved state exists)
-	if b.tempProfileDir == "" {
+	if b.tempProfileDir == "" && !attachedExternal {
 		b.RestoreState()
 	}
 
 	// Start crash monitoring
-	if !b.quietStealthObservers() {
+	if !attachedExternal && !b.quietStealthObservers() {
 		b.MonitorCrashes(nil)
 	}
 
@@ -334,6 +341,7 @@ func (b *Bridge) RestartBrowser(cfg *config.RuntimeConfig) error {
 	if cfg == nil {
 		return fmt.Errorf("runtime config is required")
 	}
+	attachedExternal := cfg.ExternalBrowserWSURL != ""
 
 	const drainWindow = 2 * time.Second
 
@@ -362,7 +370,7 @@ func (b *Bridge) RestartBrowser(cfg *config.RuntimeConfig) error {
 	} else {
 		profileDir = cfg.ProfileDir
 	}
-	if profileDir != "" {
+	if profileDir != "" && !attachedExternal {
 		time.Sleep(200 * time.Millisecond)
 		killed := killChromeByProfileDir(profileDir)
 		if killed > 0 {
@@ -418,13 +426,14 @@ func (b *Bridge) RestartBrowser(cfg *config.RuntimeConfig) error {
 }
 
 func (b *Bridge) Cleanup() {
+	attachedExternal := b.Config != nil && b.Config.ExternalBrowserWSURL != ""
 	// Persist open tabs so next startup can restore them
-	if b.TabManager != nil && b.tempProfileDir == "" {
+	if b.TabManager != nil && b.tempProfileDir == "" && !attachedExternal {
 		b.SaveState()
 	}
 
 	// Mark a clean exit so Chrome doesn't show a crash recovery bar
-	if b.Config != nil && b.tempProfileDir == "" {
+	if b.Config != nil && b.tempProfileDir == "" && !attachedExternal {
 		MarkCleanExit(b.Config.ProfileDir)
 	}
 
@@ -447,7 +456,7 @@ func (b *Bridge) Cleanup() {
 	} else if b.Config != nil {
 		profileDir = b.Config.ProfileDir
 	}
-	if profileDir != "" {
+	if profileDir != "" && !attachedExternal {
 		// Brief wait for context cancel to propagate
 		time.Sleep(200 * time.Millisecond)
 		killed := killChromeByProfileDir(profileDir)
@@ -627,6 +636,7 @@ type ActionRequest struct {
 
 	WaitNav bool   `json:"waitNav"`
 	Fast    bool   `json:"fast"`
+	Human   bool   `json:"human"`
 	Owner   string `json:"owner"`
 }
 

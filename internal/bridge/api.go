@@ -69,6 +69,22 @@ type BridgeAPI interface {
 
 type LockInfo = bridgetabs.LockInfo
 
+type ProfileBackendSteel struct {
+	ProxyURL       string   `json:"proxyUrl,omitempty"`
+	ExtensionPaths []string `json:"extensionPaths,omitempty"`
+}
+
+type ProfileBackendPinchTab struct {
+	ProxyURL string `json:"proxyUrl,omitempty"`
+	Timezone string `json:"timezone,omitempty"`
+}
+
+type ProfileBackend struct {
+	Kind     string                  `json:"kind,omitempty"`
+	Steel    *ProfileBackendSteel    `json:"steel,omitempty"`
+	PinchTab *ProfileBackendPinchTab `json:"pinchtab,omitempty"`
+}
+
 // ProfileService abstracts profile management operations.
 type ProfileService interface {
 	RegisterHandlers(mux *http.ServeMux)
@@ -100,22 +116,23 @@ type OrchestratorService interface {
 // Common types used across packages (migrated from main)
 
 type ProfileInfo struct {
-	ID                string    `json:"id,omitempty"`
-	Name              string    `json:"name"`
-	Path              string    `json:"path,omitempty"`       // File system path to profile directory
-	PathExists        bool      `json:"pathExists,omitempty"` // Whether the path exists on disk
-	Created           time.Time `json:"created"`
-	LastUsed          time.Time `json:"lastUsed"`
-	DiskUsage         int64     `json:"diskUsage"`
-	Running           bool      `json:"running"`
-	Temporary         bool      `json:"temporary,omitempty"` // ephemeral instance profiles (auto-generated)
-	Source            string    `json:"source,omitempty"`
-	ChromeProfileName string    `json:"chromeProfileName,omitempty"`
-	AccountEmail      string    `json:"accountEmail,omitempty"`
-	AccountName       string    `json:"accountName,omitempty"`
-	HasAccount        bool      `json:"hasAccount,omitempty"`
-	UseWhen           string    `json:"useWhen,omitempty"`
-	Description       string    `json:"description,omitempty"`
+	ID                string          `json:"id,omitempty"`
+	Name              string          `json:"name"`
+	Path              string          `json:"path,omitempty"`       // File system path to profile directory
+	PathExists        bool            `json:"pathExists,omitempty"` // Whether the path exists on disk
+	Created           time.Time       `json:"created"`
+	LastUsed          time.Time       `json:"lastUsed"`
+	DiskUsage         int64           `json:"diskUsage"`
+	Running           bool            `json:"running"`
+	Temporary         bool            `json:"temporary,omitempty"` // ephemeral instance profiles (auto-generated)
+	Source            string          `json:"source,omitempty"`
+	ChromeProfileName string          `json:"chromeProfileName,omitempty"`
+	AccountEmail      string          `json:"accountEmail,omitempty"`
+	AccountName       string          `json:"accountName,omitempty"`
+	HasAccount        bool            `json:"hasAccount,omitempty"`
+	UseWhen           string          `json:"useWhen,omitempty"`
+	Description       string          `json:"description,omitempty"`
+	Backend           *ProfileBackend `json:"backend,omitempty"`
 }
 
 type ActionRecord struct {
@@ -141,6 +158,7 @@ type Instance struct {
 	ID          string    `json:"id"`                   // Hash-based ID: inst_XXXXXXXX
 	ProfileID   string    `json:"profileId"`            // Hash-based profile ID: prof_XXXXXXXX
 	ProfileName string    `json:"profileName"`          // Human-readable profile name (for display only)
+	Backend     string    `json:"backend,omitempty"`    // Runtime backend: pinchtab or steel
 	Port        string    `json:"port"`                 // Internal: instance port
 	URL         string    `json:"url,omitempty"`        // Canonical base URL for bridge-backed instances
 	Headless    bool      `json:"headless"`             // Mode: headless vs headed

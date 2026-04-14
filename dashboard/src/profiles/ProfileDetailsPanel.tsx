@@ -8,13 +8,14 @@ import { InstanceTabsPanel } from "../tabs";
 import { TabsLayout, EmptyView } from "../components/molecules";
 import type { Profile, Instance, InstanceTab } from "../generated/types";
 import * as api from "../services/api";
+import type { UpdateProfileRequest } from "../services/api";
 
 interface Props {
   profile: Profile | null;
   instance?: Instance;
   onLaunch: () => void;
   onStop?: () => void;
-  onSave?: (name: string, useWhen: string) => void;
+  onSave?: (values: UpdateProfileRequest) => void;
   onDelete?: () => void;
 }
 
@@ -30,22 +31,36 @@ export default function ProfileDetailsPanel({
 }: Props) {
   const [activeTab, setActiveTab] = useState<TabId>("profile");
   const [tabs, setTabs] = useState<InstanceTab[]>([]);
-  const [formValues, setFormValues] = useState({ name: "", useWhen: "" });
+  const [formValues, setFormValues] = useState<UpdateProfileRequest>({
+    name: "",
+    useWhen: "",
+  });
 
   const isRunning = instance?.status === "running";
 
   useEffect(() => {
     if (profile) {
-      setFormValues({ name: profile.name, useWhen: profile.useWhen || "" });
+      setFormValues({
+        name: profile.name,
+        useWhen: profile.useWhen || "",
+        backend: profile.backend,
+      });
     } else {
       setTabs([]);
       setFormValues({ name: "", useWhen: "" });
     }
   }, [profile]);
 
-  const handleProfileChange = useCallback((name: string, useWhen: string) => {
-    setFormValues({ name, useWhen });
-  }, []);
+  const handleProfileChange = useCallback(
+    (
+      name: string,
+      useWhen: string,
+      backend: UpdateProfileRequest["backend"],
+    ) => {
+      setFormValues({ name, useWhen, backend });
+    },
+    [],
+  );
 
   const loadTabs = useCallback(async () => {
     if (!instance?.id) {
@@ -70,7 +85,7 @@ export default function ProfileDetailsPanel({
   }, [activeTab, loadTabs]);
 
   const handleSave = () => {
-    onSave?.(formValues.name, formValues.useWhen);
+    onSave?.(formValues);
   };
 
   if (!profile) {
@@ -82,8 +97,10 @@ export default function ProfileDetailsPanel({
   }
 
   const hasChanges =
-    formValues.name.trim() !== profile.name ||
-    formValues.useWhen !== (profile.useWhen || "");
+    (formValues.name || "").trim() !== profile.name ||
+    formValues.useWhen !== (profile.useWhen || "") ||
+    JSON.stringify(formValues.backend || null) !==
+      JSON.stringify(profile.backend || null);
 
   const profileTabs: { id: TabId; label: string; badge?: string | number }[] = [
     { id: "profile", label: `Profile: ${profile.name}` },
@@ -107,7 +124,7 @@ export default function ProfileDetailsPanel({
               onStop={onStop || (() => {})}
               onSave={handleSave}
               onDelete={onDelete || (() => {})}
-              isSaveDisabled={!formValues.name.trim() || !hasChanges}
+              isSaveDisabled={!(formValues.name || "").trim() || !hasChanges}
             />
           }
         >

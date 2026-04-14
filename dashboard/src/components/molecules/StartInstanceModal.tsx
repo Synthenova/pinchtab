@@ -52,7 +52,7 @@ export default function StartInstanceModal({ open, profile, onClose }: Props) {
 
     try {
       const payload: LaunchInstanceRequest = {
-        name: profile.name,
+        profileId: profile.id || profile.name,
         port: port.trim() || undefined,
         mode: headless ? undefined : "headed",
       };

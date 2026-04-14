@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/pinchtab/pinchtab/internal/api/types"
 	"github.com/pinchtab/pinchtab/internal/bridge"
+	"github.com/pinchtab/pinchtab/internal/browserproxy"
 	"github.com/pinchtab/pinchtab/internal/config"
 	"github.com/pinchtab/pinchtab/internal/ids"
 	"github.com/pinchtab/pinchtab/internal/instance"
@@ -82,10 +84,16 @@ type InstanceInternal struct {
 	URL   string
 	Error string
 
-	authToken string
-	cdpPort   int
-	cmd       Cmd
-	logBuf    *ringBuffer
+	authToken      string
+	cdpPort        int
+	cmd            Cmd
+	steelCmd       *exec.Cmd
+	steelBaseURL   string
+	steelPort      int
+	steelCDPPort   int
+	steelSessionID string
+	browserProxy   *browserproxy.Server
+	logBuf         *ringBuffer
 }
 
 func NewOrchestrator(baseDir string) *Orchestrator {
@@ -227,6 +235,58 @@ func (o *Orchestrator) SetPortRange(start, end int) {
 	o.portAllocator = NewPortAllocator(start, end)
 }
 
+func (o *Orchestrator) profileBackend(name string) *bridge.ProfileBackend {
+	if o.profiles == nil {
+		return &bridge.ProfileBackend{Kind: "pinchtab"}
+	}
+	meta, err := o.profiles.Meta(name)
+	if err != nil {
+		return &bridge.ProfileBackend{Kind: "pinchtab"}
+	}
+	if meta.Backend == nil {
+		return &bridge.ProfileBackend{Kind: "pinchtab"}
+	}
+	return meta.Backend
+}
+
+func (o *Orchestrator) resolveSteelLaunchDefaults(profileName, proxyURL string, extensionPaths []string) (string, []string) {
+	backend := o.profileBackend(profileName)
+	if backend == nil || backend.Kind != "steel" {
+		return strings.TrimSpace(proxyURL), mergeExtensionPaths(extensionPaths, nil)
+	}
+
+	resolvedProxy := strings.TrimSpace(proxyURL)
+	if resolvedProxy == "" && backend.Steel != nil {
+		resolvedProxy = strings.TrimSpace(backend.Steel.ProxyURL)
+	}
+
+	resolvedExtensions := extensionPaths
+	if backend.Steel != nil {
+		resolvedExtensions = mergeExtensionPaths(extensionPaths, backend.Steel.ExtensionPaths)
+	}
+
+	return resolvedProxy, resolvedExtensions
+}
+
+func (o *Orchestrator) resolvePinchTabLaunchDefaults(profileName, proxyURL, timezone string) (string, string) {
+	backend := o.profileBackend(profileName)
+	if backend == nil || backend.Kind != "pinchtab" {
+		return strings.TrimSpace(proxyURL), strings.TrimSpace(timezone)
+	}
+
+	resolvedProxy := strings.TrimSpace(proxyURL)
+	resolvedTimezone := strings.TrimSpace(timezone)
+	if backend.PinchTab != nil {
+		if resolvedProxy == "" {
+			resolvedProxy = strings.TrimSpace(backend.PinchTab.ProxyURL)
+		}
+		if resolvedTimezone == "" {
+			resolvedTimezone = strings.TrimSpace(backend.PinchTab.Timezone)
+		}
+	}
+	return resolvedProxy, resolvedTimezone
+}
+
 func installStableBinary(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
@@ -245,6 +305,10 @@ func installStableBinary(src, dst string) error {
 }
 
 func (o *Orchestrator) Launch(name, port string, headless bool, extensionPaths []string) (*bridge.Instance, error) {
+	return o.LaunchWithOptions(name, port, headless, extensionPaths, "")
+}
+
+func (o *Orchestrator) LaunchWithOptions(name, port string, headless bool, extensionPaths []string, steelProxyURL string) (*bridge.Instance, error) {
 	// Validate profile name to prevent path traversal attacks
 	if err := profiles.ValidateProfileName(name); err != nil {
 		return nil, err
@@ -320,6 +384,69 @@ func (o *Orchestrator) Launch(name, port string, headless bool, extensionPaths [
 			profilePath = resolvedPath
 		}
 	}
+	logBuf := newRingBuffer(256 * 1024)
+	externalBrowserWSURL := ""
+	steelSessionID := ""
+	var steelCmd *exec.Cmd
+	steelBaseURL := ""
+	steelPort := 0
+	steelCDPPort := 0
+	pinchTabProxyURL := ""
+	pinchTabTimezone := ""
+	var browserProxy *browserproxy.Server
+	launchSucceeded := false
+	defer func() {
+		if !launchSucceeded && browserProxy != nil {
+			_ = browserProxy.Close()
+		}
+	}()
+	if backend := o.profileBackend(name); backend != nil && backend.Kind == "steel" {
+		proxyURL := steelProxyURL
+		steelExtensionPaths := extensionPaths
+		if proxyURL == "" && backend.Steel != nil {
+			proxyURL = strings.TrimSpace(backend.Steel.ProxyURL)
+		}
+		if backend.Steel != nil {
+			steelExtensionPaths = mergeExtensionPaths(extensionPaths, backend.Steel.ExtensionPaths)
+		}
+		allocatedSteelPort, err := o.portAllocator.AllocatePort()
+		if err != nil {
+			return nil, fmt.Errorf("failed to allocate steel api port: %w", err)
+		}
+		reservedPorts = append(reservedPorts, allocatedSteelPort)
+		allocatedSteelCDPPort, err := o.portAllocator.AllocatePort()
+		if err != nil {
+			return nil, fmt.Errorf("failed to allocate steel debug port: %w", err)
+		}
+		reservedPorts = append(reservedPorts, allocatedSteelCDPPort)
+		steelCDPPort = allocatedSteelCDPPort
+		startedSteel, startedBaseURL, err := startSteelProcess(logBuf, allocatedSteelPort, allocatedSteelCDPPort)
+		if err != nil {
+			return nil, err
+		}
+		steelCmd = startedSteel
+		steelBaseURL = startedBaseURL
+		steelPort = allocatedSteelPort
+		session, err := createSteelSession(steelBaseURL, profilePath, headless, proxyURL, steelExtensionPaths)
+		if err != nil {
+			if steelCmd != nil {
+				stopExternalProcess(steelCmd)
+			}
+			return nil, err
+		}
+		externalBrowserWSURL = session.BrowserWSEndpoint
+		steelSessionID = session.ID
+	} else {
+		pinchTabProxyURL, pinchTabTimezone = o.resolvePinchTabLaunchDefaults(name, "", "")
+		if strings.TrimSpace(pinchTabProxyURL) != "" {
+			proxyServer, err := browserproxy.Start(pinchTabProxyURL)
+			if err != nil {
+				return nil, fmt.Errorf("start browser proxy: %w", err)
+			}
+			browserProxy = proxyServer
+			pinchTabProxyURL = proxyServer.URL()
+		}
+	}
 	if err := os.MkdirAll(filepath.Join(profilePath, "Default"), 0755); err != nil {
 		return nil, fmt.Errorf("create profile dir: %w", err)
 	}
@@ -328,7 +455,7 @@ func (o *Orchestrator) Launch(name, port string, headless bool, extensionPaths [
 		return nil, fmt.Errorf("create state dir: %w", err)
 	}
 
-	childConfigPath, err := o.writeChildConfig(port, cdpPort, profilePath, instanceStateDir, headless, extensionPaths)
+	childConfigPath, err := o.writeChildConfig(port, cdpPort, profilePath, instanceStateDir, headless, extensionPaths, externalBrowserWSURL, pinchTabProxyURL, pinchTabTimezone)
 	if err != nil {
 		return nil, fmt.Errorf("write child config: %w", err)
 	}
@@ -339,7 +466,6 @@ func (o *Orchestrator) Launch(name, port string, headless bool, extensionPaths [
 	}
 	env := mergeEnvWithOverrides(filterEnvWithPrefixes(os.Environ(), "PINCHTAB_"), envOverrides)
 
-	logBuf := newRingBuffer(256 * 1024)
 	slog.Info("starting instance process", "id", instanceID, "profile", name, "port", port)
 
 	cmd, err := o.runner.Run(context.Background(), o.binary, []string{"bridge"}, env, logBuf, logBuf)
@@ -352,37 +478,74 @@ func (o *Orchestrator) Launch(name, port string, headless bool, extensionPaths [
 			ID:          instanceID,
 			ProfileID:   profileID,
 			ProfileName: name,
+			Backend:     "pinchtab",
 			Port:        port,
 			URL:         fmt.Sprintf("http://localhost:%s", port),
 			Headless:    headless,
 			Status:      "starting",
 			StartTime:   time.Now(),
 		},
-		URL:     fmt.Sprintf("http://localhost:%s", port),
-		cdpPort: cdpPort,
-		cmd:     cmd,
-		logBuf:  logBuf,
+		URL:            fmt.Sprintf("http://localhost:%s", port),
+		cdpPort:        cdpPort,
+		cmd:            cmd,
+		steelCmd:       steelCmd,
+		steelBaseURL:   steelBaseURL,
+		steelPort:      steelPort,
+		steelCDPPort:   steelCDPPort,
+		steelSessionID: steelSessionID,
+		browserProxy:   browserProxy,
+		logBuf:         logBuf,
 	}
 
 	o.mu.Lock()
 	o.instances[instanceID] = inst
 	o.mu.Unlock()
 	reservedPorts = nil
+	launchSucceeded = true
 
 	go o.monitor(inst)
 
 	return &inst.Instance, nil
 }
 
-func (o *Orchestrator) writeChildConfig(port string, cdpPort int, profilePath, instanceStateDir string, headless bool, extensionPaths []string) (string, error) {
+func mergeExtensionPaths(primary []string, secondary []string) []string {
+	seen := make(map[string]struct{}, len(primary)+len(secondary))
+	merged := make([]string, 0, len(primary)+len(secondary))
+	for _, source := range [][]string{primary, secondary} {
+		for _, path := range source {
+			trimmed := strings.TrimSpace(path)
+			if trimmed == "" {
+				continue
+			}
+			if _, ok := seen[trimmed]; ok {
+				continue
+			}
+			seen[trimmed] = struct{}{}
+			merged = append(merged, trimmed)
+		}
+	}
+	if len(merged) == 0 {
+		return nil
+	}
+	return merged
+}
+
+func (o *Orchestrator) writeChildConfig(port string, cdpPort int, profilePath, instanceStateDir string, headless bool, extensionPaths []string, externalBrowserWSURL, proxyURL, timezone string) (string, error) {
 	fc := config.FileConfigFromRuntime(o.runtimeCfg)
 	fc.Server.Port = port
 	fc.Server.StateDir = instanceStateDir
 	activityEnabled := false
 	fc.Observability.Activity.Enabled = &activityEnabled
 	fc.Browser.ChromeDebugPort = intPtr(cdpPort)
+	fc.Browser.ExternalBrowserWSURL = externalBrowserWSURL
 	fc.Profiles.BaseDir = filepath.Dir(profilePath)
 	fc.Profiles.DefaultProfile = filepath.Base(profilePath)
+	if strings.TrimSpace(proxyURL) != "" {
+		fc.Browser.ProxyURL = strings.TrimSpace(proxyURL)
+	}
+	if strings.TrimSpace(timezone) != "" {
+		fc.InstanceDefaults.Timezone = strings.TrimSpace(timezone)
+	}
 	if headless {
 		fc.InstanceDefaults.Mode = "headless"
 	} else {
@@ -541,7 +704,13 @@ func (o *Orchestrator) Stop(id string) error {
 		return nil
 	}
 	inst.Status = "stopping"
+	steelBaseURL := inst.steelBaseURL
+	steelSessionID := inst.steelSessionID
 	o.mu.Unlock()
+
+	if steelSessionID != "" && steelBaseURL != "" {
+		releaseSteelSession(steelBaseURL, steelSessionID)
+	}
 
 	if inst.cmd == nil {
 		if inst.AttachType == "bridge" {
@@ -642,9 +811,19 @@ func (o *Orchestrator) markStopped(id string) {
 	}
 
 	portStr := inst.Port
+	steelCmd := inst.steelCmd
+	browserProxy := inst.browserProxy
 	if portInt, err := strconv.Atoi(portStr); err == nil {
 		o.portAllocator.ReleasePort(portInt)
 		slog.Debug("released port", "id", id, "port", portStr)
+	}
+	if inst.steelPort > 0 {
+		o.portAllocator.ReleasePort(inst.steelPort)
+		slog.Debug("released Steel port", "id", id, "port", inst.steelPort)
+	}
+	if inst.steelCDPPort > 0 {
+		o.portAllocator.ReleasePort(inst.steelCDPPort)
+		slog.Debug("released Steel CDP port", "id", id, "port", inst.steelCDPPort)
 	}
 	if inst.cdpPort > 0 {
 		o.portAllocator.ReleasePort(inst.cdpPort)
@@ -661,6 +840,12 @@ func (o *Orchestrator) markStopped(id string) {
 	}
 
 	slog.Info("instance stopped and removed", "id", id, "profile", profileName)
+	if steelCmd != nil {
+		stopExternalProcess(steelCmd)
+	}
+	if browserProxy != nil {
+		_ = browserProxy.Close()
+	}
 
 	// Kill any orphaned Chrome processes using this profile's directory.
 	// Chrome spawns helpers (GPU, renderer) in their own process groups,

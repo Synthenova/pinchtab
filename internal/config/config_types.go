@@ -36,27 +36,29 @@ type RuntimeConfig struct {
 	TrustedProxyCIDRs      []string // CIDRs/IPs whose RemoteIPAddress is trusted in navigation responses (e.g. internal proxy)
 
 	// Browser/instance settings
-	Headless          bool
-	HeadlessSet       bool // true when explicitly set via config or flag
-	NoRestore         bool
-	ProfileDir        string
-	ProfilesBaseDir   string
-	DefaultProfile    string
-	ChromeVersion     string
-	Timezone          string
-	BlockImages       bool
-	BlockMedia        bool
-	BlockAds          bool
-	MaxTabs           int
-	MaxParallelTabs   int // 0 = auto-detect from runtime.NumCPU
-	ChromeBinary      string
-	ChromeDebugPort   int
-	ChromeExtraFlags  string
-	ExtensionPaths    []string
-	UserAgent         string
-	NoAnimations      bool
-	StealthLevel      string
-	TabEvictionPolicy string // "close_lru" (default), "reject", "close_oldest"
+	Headless             bool
+	HeadlessSet          bool // true when explicitly set via config or flag
+	NoRestore            bool
+	ProfileDir           string
+	ProfilesBaseDir      string
+	DefaultProfile       string
+	ChromeVersion        string
+	Timezone             string
+	BlockImages          bool
+	BlockMedia           bool
+	BlockAds             bool
+	MaxTabs              int
+	MaxParallelTabs      int // 0 = auto-detect from runtime.NumCPU
+	ChromeBinary         string
+	ChromeDebugPort      int
+	ExternalBrowserWSURL string
+	ChromeExtraFlags     string
+	ProxyURL             string
+	ExtensionPaths       []string
+	UserAgent            string
+	NoAnimations         bool
+	StealthLevel         string
+	TabEvictionPolicy    string // "close_lru" (default), "reject", "close_oldest"
 
 	// Timeout settings
 	ActionTimeout   time.Duration
@@ -233,11 +235,13 @@ type DashboardSessionFileConfig struct {
 }
 
 type BrowserConfig struct {
-	ChromeVersion    string   `json:"version,omitempty"`
-	ChromeBinary     string   `json:"binary,omitempty"`
-	ChromeDebugPort  *int     `json:"remoteDebuggingPort,omitempty"`
-	ChromeExtraFlags string   `json:"extraFlags,omitempty"`
-	ExtensionPaths   []string `json:"extensionPaths,omitempty"`
+	ChromeVersion        string   `json:"version,omitempty"`
+	ChromeBinary         string   `json:"binary,omitempty"`
+	ChromeDebugPort      *int     `json:"remoteDebuggingPort,omitempty"`
+	ExternalBrowserWSURL string   `json:"externalBrowserWsUrl,omitempty"`
+	ChromeExtraFlags     string   `json:"extraFlags,omitempty"`
+	ProxyURL             string   `json:"proxyUrl,omitempty"`
+	ExtensionPaths       []string `json:"extensionPaths,omitempty"`
 }
 
 type InstanceDefaultsConfig struct {

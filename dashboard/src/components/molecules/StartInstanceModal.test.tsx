@@ -75,7 +75,7 @@ describe("StartInstanceModal", () => {
 
     await waitFor(() => {
       expect(launchInstance).toHaveBeenCalledWith({
-        name: "alpha",
+        profileId: "prof_alpha",
         mode: "headed",
         port: undefined,
       });

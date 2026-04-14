@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -148,6 +149,11 @@ func ValidateFileConfig(fc *FileConfig) []error {
 	if fc.Browser.ChromeExtraFlags != "" {
 		errs = append(errs, validateChromeExtraFlags(fc.Browser.ChromeExtraFlags)...)
 	}
+	if fc.Browser.ProxyURL != "" {
+		if err := validateProxyURL(fc.Browser.ProxyURL, "browser.proxyUrl"); err != nil {
+			errs = append(errs, err)
+		}
+	}
 
 	// IDPI validation
 	errs = append(errs, validateIDPIConfig(fc.Security.IDPI)...)
@@ -266,6 +272,31 @@ func validateBind(bind string, field string) error {
 	// If it contains a colon, assume it's an IPv6 attempt
 	// This is intentionally loose — the OS will reject truly invalid addresses
 	return nil
+}
+
+func validateProxyURL(proxyURL string, field string) error {
+	parsed, err := url.Parse(proxyURL)
+	if err != nil {
+		return ValidationError{
+			Field:   field,
+			Message: fmt.Sprintf("invalid proxy URL %q: %v", proxyURL, err),
+		}
+	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return ValidationError{
+			Field:   field,
+			Message: fmt.Sprintf("invalid proxy URL %q (must include scheme and host)", proxyURL),
+		}
+	}
+	switch parsed.Scheme {
+	case "http", "https", "socks4", "socks5", "socks5h":
+		return nil
+	default:
+		return ValidationError{
+			Field:   field,
+			Message: fmt.Sprintf("unsupported proxy scheme %q (must be http, https, socks4, socks5, or socks5h)", parsed.Scheme),
+		}
+	}
 }
 
 func isValidStealthLevel(level string) bool {

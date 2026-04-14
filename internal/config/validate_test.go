@@ -470,6 +470,32 @@ func TestValidateFileConfig_ChromeExtraFlags(t *testing.T) {
 	}
 }
 
+func TestValidateFileConfig_ProxyURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		proxy   string
+		wantErr bool
+	}{
+		{name: "valid http", proxy: "http://proxy.local:3128", wantErr: false},
+		{name: "valid socks", proxy: "socks5://proxy.local:1080", wantErr: false},
+		{name: "missing scheme", proxy: "proxy.local:3128", wantErr: true},
+		{name: "invalid scheme", proxy: "ftp://proxy.local:21", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fc := &FileConfig{
+				Browser: BrowserConfig{ProxyURL: tt.proxy},
+			}
+			errs := ValidateFileConfig(fc)
+			hasErr := len(errs) > 0
+			if hasErr != tt.wantErr {
+				t.Fatalf("ValidateFileConfig(proxyURL=%q) error=%v, want %v (errs: %v)", tt.proxy, hasErr, tt.wantErr, errs)
+			}
+		})
+	}
+}
+
 func TestValidationError_Error(t *testing.T) {
 	err := ValidationError{
 		Field:   "server.port",

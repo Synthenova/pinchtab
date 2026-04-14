@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Button, Input, Modal } from "../atoms";
 import * as api from "../../services/api";
+import { csvToList, listToCsv } from "../../pages/settings/settingsShared";
 
 interface Props {
   open: boolean;
@@ -16,7 +17,15 @@ export default function CreateProfileModal({
   const [createName, setCreateName] = useState("");
   const [createUseWhen, setCreateUseWhen] = useState("");
   const [createSource, setCreateSource] = useState("");
+  const [backendKind, setBackendKind] = useState<"pinchtab" | "steel">(
+    "pinchtab",
+  );
+  const [pinchTabProxyUrl, setPinchTabProxyUrl] = useState("");
+  const [pinchTabTimezone, setPinchTabTimezone] = useState("");
+  const [steelProxyUrl, setSteelProxyUrl] = useState("");
+  const [steelExtensionPaths, setSteelExtensionPaths] = useState<string[]>([]);
   const [createLoading, setCreateLoading] = useState(false);
+  const backendSelectId = useId();
 
   useEffect(() => {
     if (open) {
@@ -26,17 +35,47 @@ export default function CreateProfileModal({
     setCreateName("");
     setCreateUseWhen("");
     setCreateSource("");
+    setBackendKind("pinchtab");
+    setPinchTabProxyUrl("");
+    setPinchTabTimezone("");
+    setSteelProxyUrl("");
+    setSteelExtensionPaths([]);
     setCreateLoading(false);
   }, [open]);
 
   const handleCreate = async () => {
     if (!createName.trim() || createLoading) return;
 
+    const backend =
+      backendKind === "steel"
+        ? {
+            kind: "steel",
+            steel: {
+              proxyUrl: steelProxyUrl.trim() || undefined,
+              extensionPaths:
+                steelExtensionPaths.length > 0
+                  ? steelExtensionPaths
+                  : undefined,
+            },
+          }
+        : {
+            kind: "pinchtab",
+            ...(pinchTabProxyUrl.trim() || pinchTabTimezone.trim()
+              ? {
+                  pinchtab: {
+                    proxyUrl: pinchTabProxyUrl.trim() || undefined,
+                    timezone: pinchTabTimezone.trim() || undefined,
+                  },
+                }
+              : {}),
+          };
+
     setCreateLoading(true);
     try {
       const created = await api.createProfile({
         name: createName.trim(),
         useWhen: createUseWhen.trim() || undefined,
+        backend,
       });
       onClose();
       await onCreated(created.id || created.name);
@@ -92,6 +131,62 @@ export default function CreateProfileModal({
           value={createSource}
           onChange={(e) => setCreateSource(e.target.value)}
         />
+        <div className="flex flex-col gap-1.5">
+          <label
+            htmlFor={backendSelectId}
+            className="dashboard-section-title text-[0.68rem]"
+          >
+            Browser backend
+          </label>
+          <select
+            id={backendSelectId}
+            value={backendKind}
+            onChange={(e) =>
+              setBackendKind(e.target.value as "pinchtab" | "steel")
+            }
+            className="rounded-sm border border-border-subtle bg-[rgb(var(--brand-surface-code-rgb)/0.72)] px-3 py-2 text-sm text-text-primary transition-all duration-150 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+          >
+            <option value="pinchtab">PinchTab (default)</option>
+            <option value="steel">Steel Browser</option>
+          </select>
+          <span className="text-xs text-text-muted">
+            PinchTab will use the selected backend settings when the profile is
+            started.
+          </span>
+        </div>
+        {backendKind === "pinchtab" ? (
+          <>
+            <Input
+              label="Proxy / IP (optional)"
+              placeholder="http://user:pass@host:port"
+              value={pinchTabProxyUrl}
+              onChange={(e) => setPinchTabProxyUrl(e.target.value)}
+            />
+            <Input
+              label="Timezone (optional)"
+              placeholder="Asia/Kolkata"
+              value={pinchTabTimezone}
+              onChange={(e) => setPinchTabTimezone(e.target.value)}
+            />
+          </>
+        ) : (
+          <>
+            <Input
+              label="Proxy / IP (optional)"
+              placeholder="http://user:pass@host:port"
+              value={steelProxyUrl}
+              onChange={(e) => setSteelProxyUrl(e.target.value)}
+            />
+            <Input
+              label="Extensions (optional — unpacked extension directories, comma-separated)"
+              placeholder="/path/to/ext-one, /path/to/ext-two"
+              value={listToCsv(steelExtensionPaths)}
+              onChange={(e) =>
+                setSteelExtensionPaths(csvToList(e.target.value))
+              }
+            />
+          </>
+        )}
       </div>
     </Modal>
   );

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -28,10 +29,19 @@ func (m *launchdManager) Preflight() error {
 }
 
 func (m *launchdManager) Install(configPath string) (string, error) {
+	pathEnv := os.Getenv("PATH")
+	if nodePath, err := exec.LookPath("node"); err == nil {
+		nodeDir := filepath.Dir(nodePath)
+		if pathEnv == "" {
+			pathEnv = nodeDir
+		} else if !strings.HasPrefix(pathEnv, nodeDir+":") && pathEnv != nodeDir {
+			pathEnv = nodeDir + ":" + pathEnv
+		}
+	}
 	if err := os.MkdirAll(filepath.Dir(m.ServicePath()), 0755); err != nil {
 		return "", fmt.Errorf("create LaunchAgents directory: %w", err)
 	}
-	if err := os.WriteFile(m.ServicePath(), []byte(renderLaunchdPlist(m.env.execPath, configPath)), 0644); err != nil {
+	if err := os.WriteFile(m.ServicePath(), []byte(renderLaunchdPlist(m.env.execPath, configPath, pathEnv)), 0644); err != nil {
 		return "", fmt.Errorf("write launchd plist: %w", err)
 	}
 	_, _ = runCommand(m.runner, "launchctl", "bootout", launchdDomainTarget(m.env), m.ServicePath())
@@ -144,7 +154,7 @@ func isLaunchdIgnorableError(err error) bool {
 		strings.Contains(msg, "already bootstrapped")
 }
 
-func renderLaunchdPlist(execPath, configPath string) string {
+func renderLaunchdPlist(execPath, configPath, pathEnv string) string {
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -166,6 +176,8 @@ func renderLaunchdPlist(execPath, configPath string) string {
   <dict>
     <key>PINCHTAB_CONFIG</key>
     <string>%s</string>
+    <key>PATH</key>
+    <string>%s</string>
   </dict>
   <key>StandardOutPath</key>
   <string>/tmp/pinchtab.out.log</string>
@@ -173,5 +185,5 @@ func renderLaunchdPlist(execPath, configPath string) string {
   <string>/tmp/pinchtab.err.log</string>
 </dict>
 </plist>
-`, pinchtabLaunchdLabel, execPath, configPath)
+`, pinchtabLaunchdLabel, execPath, configPath, pathEnv)
 }

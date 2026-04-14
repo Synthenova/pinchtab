@@ -4,6 +4,7 @@ import { useAppStore } from "../stores/useAppStore";
 import { EmptyState, Button, Badge } from "../components/atoms";
 import * as api from "../services/api";
 import type { Profile } from "../generated/types";
+import type { UpdateProfileRequest } from "../services/api";
 import {
   CreateProfileModal,
   StartInstanceModal,
@@ -105,12 +106,24 @@ export default function ProfilesPage() {
     }
   };
 
-  const handleSave = async (name: string, useWhen: string) => {
+  const handleSave = async (values: UpdateProfileRequest) => {
     if (!selectedProfile?.id) return;
     try {
       const updated = await api.updateProfile(selectedProfile.id, {
-        name: name !== selectedProfile.name ? name : undefined,
-        useWhen: useWhen !== selectedProfile.useWhen ? useWhen : undefined,
+        name:
+          values.name !== undefined && values.name !== selectedProfile.name
+            ? values.name
+            : undefined,
+        useWhen:
+          values.useWhen !== undefined &&
+          values.useWhen !== selectedProfile.useWhen
+            ? values.useWhen
+            : undefined,
+        backend:
+          JSON.stringify(values.backend || null) !==
+          JSON.stringify(selectedProfile.backend || null)
+            ? values.backend
+            : undefined,
       });
       loadProfiles(updated.id || selectedProfile.id);
     } catch (e) {

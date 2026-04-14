@@ -98,25 +98,27 @@ type ProfileManager struct {
 }
 
 type ProfileMeta struct {
-	ID          string `json:"id,omitempty"`
-	Name        string `json:"name,omitempty"`
-	UseWhen     string `json:"useWhen,omitempty"`
-	Description string `json:"description,omitempty"`
+	ID          string                 `json:"id,omitempty"`
+	Name        string                 `json:"name,omitempty"`
+	UseWhen     string                 `json:"useWhen,omitempty"`
+	Description string                 `json:"description,omitempty"`
+	Backend     *bridge.ProfileBackend `json:"backend,omitempty"`
 }
 
 type ProfileDetailedInfo struct {
-	ID                string    `json:"id,omitempty"`
-	Name              string    `json:"name"`
-	Path              string    `json:"path"`
-	CreatedAt         time.Time `json:"createdAt"`
-	SizeMB            float64   `json:"sizeMB"`
-	Source            string    `json:"source,omitempty"`
-	ChromeProfileName string    `json:"chromeProfileName,omitempty"`
-	AccountEmail      string    `json:"accountEmail,omitempty"`
-	AccountName       string    `json:"accountName,omitempty"`
-	HasAccount        bool      `json:"hasAccount,omitempty"`
-	UseWhen           string    `json:"useWhen,omitempty"`
-	Description       string    `json:"description,omitempty"`
+	ID                string                 `json:"id,omitempty"`
+	Name              string                 `json:"name"`
+	Path              string                 `json:"path"`
+	CreatedAt         time.Time              `json:"createdAt"`
+	SizeMB            float64                `json:"sizeMB"`
+	Source            string                 `json:"source,omitempty"`
+	ChromeProfileName string                 `json:"chromeProfileName,omitempty"`
+	AccountEmail      string                 `json:"accountEmail,omitempty"`
+	AccountName       string                 `json:"accountName,omitempty"`
+	HasAccount        bool                   `json:"hasAccount,omitempty"`
+	UseWhen           string                 `json:"useWhen,omitempty"`
+	Description       string                 `json:"description,omitempty"`
+	Backend           *bridge.ProfileBackend `json:"backend,omitempty"`
 }
 
 func NewProfileManager(baseDir string) *ProfileManager {
@@ -222,6 +224,7 @@ func (pm *ProfileManager) List() ([]bridge.ProfileInfo, error) {
 			HasAccount:        info.HasAccount,
 			UseWhen:           info.UseWhen,
 			Description:       info.Description,
+			Backend:           info.Backend,
 		})
 	}
 	sort.Slice(profiles, func(i, j int) bool { return profiles[i].Name < profiles[j].Name })
@@ -277,7 +280,81 @@ func (pm *ProfileManager) profileInfo(dirName string) (ProfileDetailedInfo, erro
 		HasAccount:        hasAccount,
 		UseWhen:           meta.UseWhen,
 		Description:       meta.Description,
+		Backend:           normalizeProfileBackend(meta.Backend),
 	}, nil
+}
+
+func normalizeProfileBackend(backend *bridge.ProfileBackend) *bridge.ProfileBackend {
+	if backend == nil {
+		return &bridge.ProfileBackend{Kind: "pinchtab"}
+	}
+	normalized := *backend
+	if normalized.Kind == "" {
+		normalized.Kind = "pinchtab"
+	}
+	switch normalized.Kind {
+	case "steel":
+		if normalized.Steel == nil {
+			normalized.Steel = &bridge.ProfileBackendSteel{}
+		}
+		normalized.Steel.ProxyURL = strings.TrimSpace(normalized.Steel.ProxyURL)
+		normalized.Steel.ExtensionPaths = normalizeStringList(normalized.Steel.ExtensionPaths)
+		normalized.PinchTab = nil
+		return &normalized
+	case "pinchtab":
+		if normalized.PinchTab == nil {
+			normalized.PinchTab = &bridge.ProfileBackendPinchTab{}
+		}
+		normalized.PinchTab.ProxyURL = strings.TrimSpace(normalized.PinchTab.ProxyURL)
+		normalized.PinchTab.Timezone = strings.TrimSpace(normalized.PinchTab.Timezone)
+		if normalized.PinchTab.ProxyURL == "" && normalized.PinchTab.Timezone == "" {
+			normalized.PinchTab = nil
+		}
+		normalized.Steel = nil
+		return &normalized
+	default:
+		normalized.Kind = "pinchtab"
+		normalized.Steel = nil
+		normalized.PinchTab = &bridge.ProfileBackendPinchTab{}
+		return &normalized
+	}
+}
+
+func normalizeStringList(items []string) []string {
+	if len(items) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(items))
+	normalized := make([]string, 0, len(items))
+	for _, item := range items {
+		trimmed := strings.TrimSpace(item)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		normalized = append(normalized, trimmed)
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
+}
+
+func validateProfileBackend(backend *bridge.ProfileBackend) error {
+	if backend == nil {
+		return nil
+	}
+	switch backend.Kind {
+	case "", "pinchtab":
+		return nil
+	case "steel":
+		return nil
+	default:
+		return fmt.Errorf("unsupported backend kind %q", backend.Kind)
+	}
 }
 
 func (pm *ProfileManager) Import(name, sourcePath string) error {
@@ -335,12 +412,16 @@ func (pm *ProfileManager) ImportWithMeta(name, sourcePath string, meta ProfileMe
 	if err := pm.Import(name, sourcePath); err != nil {
 		return err
 	}
+	if err := validateProfileBackend(meta.Backend); err != nil {
+		return err
+	}
 	if meta.ID == "" {
 		meta.ID = profileID(name)
 	}
 	if meta.Name == "" {
 		meta.Name = name
 	}
+	meta.Backend = normalizeProfileBackend(meta.Backend)
 	dest := filepath.Join(pm.baseDir, profileID(name))
 	return writeProfileMeta(dest, meta)
 }
@@ -417,12 +498,16 @@ func (pm *ProfileManager) CreateWithMeta(name string, meta ProfileMeta) error {
 	if err := pm.Create(name); err != nil {
 		return err
 	}
+	if err := validateProfileBackend(meta.Backend); err != nil {
+		return err
+	}
 	if meta.ID == "" {
 		meta.ID = profileID(name)
 	}
 	if meta.Name == "" {
 		meta.Name = name
 	}
+	meta.Backend = normalizeProfileBackend(meta.Backend)
 	dest := filepath.Join(pm.baseDir, profileID(name))
 	return writeProfileMeta(dest, meta)
 }
@@ -610,8 +695,82 @@ func (pm *ProfileManager) UpdateMeta(name string, meta map[string]string) error 
 	if description, ok := meta["description"]; ok {
 		existing.Description = description
 	}
+	if backendKind, ok := meta["backend.kind"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		existing.Backend.Kind = backendKind
+	}
+	if backendProxyURL, ok := meta["backend.steel.proxyUrl"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		if existing.Backend.Steel == nil {
+			existing.Backend.Steel = &bridge.ProfileBackendSteel{}
+		}
+		existing.Backend.Steel.ProxyURL = backendProxyURL
+	}
+	if backendExtensionPaths, ok := meta["backend.steel.extensionPaths"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		if existing.Backend.Steel == nil {
+			existing.Backend.Steel = &bridge.ProfileBackendSteel{}
+		}
+		existing.Backend.Steel.ExtensionPaths = normalizeStringList(strings.Split(backendExtensionPaths, ","))
+	}
+	if backendProxyURL, ok := meta["backend.pinchtab.proxyUrl"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		if existing.Backend.PinchTab == nil {
+			existing.Backend.PinchTab = &bridge.ProfileBackendPinchTab{}
+		}
+		existing.Backend.PinchTab.ProxyURL = backendProxyURL
+		if existing.Backend.Kind == "" {
+			existing.Backend.Kind = "pinchtab"
+		}
+	}
+	if backendTimezone, ok := meta["backend.pinchtab.timezone"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		if existing.Backend.PinchTab == nil {
+			existing.Backend.PinchTab = &bridge.ProfileBackendPinchTab{}
+		}
+		existing.Backend.PinchTab.Timezone = backendTimezone
+		if existing.Backend.Kind == "" {
+			existing.Backend.Kind = "pinchtab"
+		}
+	}
+	if err := validateProfileBackend(existing.Backend); err != nil {
+		return err
+	}
+	existing.Backend = normalizeProfileBackend(existing.Backend)
 
 	return writeProfileMeta(dir, existing)
+}
+
+func (pm *ProfileManager) Meta(name string) (ProfileMeta, error) {
+	if err := ValidateProfileName(name); err != nil {
+		return ProfileMeta{}, err
+	}
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	dir, err := pm.findProfileDirByName(name)
+	if err != nil {
+		return ProfileMeta{}, err
+	}
+	meta := readProfileMeta(dir)
+	if meta.ID == "" {
+		meta.ID = profileID(name)
+	}
+	if meta.Name == "" {
+		meta.Name = name
+	}
+	meta.Backend = normalizeProfileBackend(meta.Backend)
+	return meta, nil
 }
 
 func (pm *ProfileManager) Rename(oldName, newName string) error {

@@ -98,6 +98,7 @@ var reservedChromeExtraFlagFields = map[string]string{
 	"--headless":                                "instanceDefaults.mode",
 	"--load-extension":                          "browser.extensionPaths",
 	"--disable-extensions-except":               "browser.extensionPaths",
+	"--proxy-server":                            "browser.proxyUrl",
 	"--remote-debugging-address":                "browser.remoteDebuggingPort",
 	"--remote-debugging-pipe":                   "browser.remoteDebuggingPort",
 	"--remote-debugging-port":                   "browser.remoteDebuggingPort",

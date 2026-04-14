@@ -7,8 +7,13 @@ import (
 	"strings"
 
 	"github.com/pinchtab/pinchtab/internal/authn"
+	"github.com/pinchtab/pinchtab/internal/bridge"
 	"github.com/pinchtab/pinchtab/internal/httpx"
 )
+
+func encodeProfileStringList(items []string) string {
+	return strings.Join(normalizeStringList(items), ",")
+}
 
 func profileMutationStatus(err error) int {
 	switch {
@@ -68,6 +73,7 @@ func (pm *ProfileManager) handleList(w http.ResponseWriter, r *http.Request) {
 					"hasAccount":        p.HasAccount,
 					"useWhen":           p.UseWhen,
 					"description":       p.Description,
+					"backend":           p.Backend,
 				})
 			}
 		}
@@ -80,9 +86,10 @@ func (pm *ProfileManager) handleList(w http.ResponseWriter, r *http.Request) {
 
 func (pm *ProfileManager) handleCreate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-		UseWhen     string `json:"useWhen"`
+		Name        string                 `json:"name"`
+		Description string                 `json:"description"`
+		UseWhen     string                 `json:"useWhen"`
+		Backend     *bridge.ProfileBackend `json:"backend"`
 	}
 	if err := httpx.DecodeJSONBody(w, r, 0, &req); err != nil {
 		httpx.Error(w, httpx.StatusForJSONDecodeError(err), err)
@@ -96,6 +103,7 @@ func (pm *ProfileManager) handleCreate(w http.ResponseWriter, r *http.Request) {
 	meta := ProfileMeta{
 		Description: req.Description,
 		UseWhen:     req.UseWhen,
+		Backend:     req.Backend,
 	}
 
 	if err := pm.CreateWithMeta(req.Name, meta); err != nil {
@@ -114,10 +122,11 @@ func (pm *ProfileManager) handleCreate(w http.ResponseWriter, r *http.Request) {
 
 func (pm *ProfileManager) handleImport(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name        string `json:"name"`
-		SourcePath  string `json:"sourcePath"`
-		Description string `json:"description"`
-		UseWhen     string `json:"useWhen"`
+		Name        string                 `json:"name"`
+		SourcePath  string                 `json:"sourcePath"`
+		Description string                 `json:"description"`
+		UseWhen     string                 `json:"useWhen"`
+		Backend     *bridge.ProfileBackend `json:"backend"`
 	}
 	if err := httpx.DecodeJSONBody(w, r, 0, &req); err != nil {
 		httpx.Error(w, httpx.StatusForJSONDecodeError(err), err)
@@ -131,6 +140,7 @@ func (pm *ProfileManager) handleImport(w http.ResponseWriter, r *http.Request) {
 	meta := ProfileMeta{
 		Description: req.Description,
 		UseWhen:     req.UseWhen,
+		Backend:     req.Backend,
 	}
 
 	if err := pm.ImportWithMeta(req.Name, req.SourcePath, meta); err != nil {
@@ -143,9 +153,10 @@ func (pm *ProfileManager) handleImport(w http.ResponseWriter, r *http.Request) {
 
 func (pm *ProfileManager) handleUpdateMeta(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name        string  `json:"name"`
-		Description *string `json:"description"`
-		UseWhen     *string `json:"useWhen"`
+		Name        string                 `json:"name"`
+		Description *string                `json:"description"`
+		UseWhen     *string                `json:"useWhen"`
+		Backend     *bridge.ProfileBackend `json:"backend"`
 	}
 	if err := httpx.DecodeJSONBody(w, r, 0, &req); err != nil {
 		httpx.Error(w, httpx.StatusForJSONDecodeError(err), err)
@@ -162,6 +173,17 @@ func (pm *ProfileManager) handleUpdateMeta(w http.ResponseWriter, r *http.Reques
 	}
 	if req.UseWhen != nil {
 		updates["useWhen"] = *req.UseWhen
+	}
+	if req.Backend != nil {
+		updates["backend.kind"] = req.Backend.Kind
+		if req.Backend.Steel != nil {
+			updates["backend.steel.proxyUrl"] = req.Backend.Steel.ProxyURL
+			updates["backend.steel.extensionPaths"] = encodeProfileStringList(req.Backend.Steel.ExtensionPaths)
+		}
+		if req.Backend.PinchTab != nil {
+			updates["backend.pinchtab.proxyUrl"] = req.Backend.PinchTab.ProxyURL
+			updates["backend.pinchtab.timezone"] = req.Backend.PinchTab.Timezone
+		}
 	}
 
 	if err := pm.UpdateMeta(req.Name, updates); err != nil {
@@ -202,6 +224,7 @@ func (pm *ProfileManager) handleGetByID(w http.ResponseWriter, r *http.Request) 
 			"hasAccount":        p.HasAccount,
 			"useWhen":           p.UseWhen,
 			"description":       p.Description,
+			"backend":           p.Backend,
 		}
 		break
 	}
@@ -260,9 +283,10 @@ func (pm *ProfileManager) handleUpdateByID(w http.ResponseWriter, r *http.Reques
 	}
 
 	var req struct {
-		Name        *string `json:"name"`
-		UseWhen     *string `json:"useWhen"`
-		Description *string `json:"description"`
+		Name        *string                `json:"name"`
+		UseWhen     *string                `json:"useWhen"`
+		Description *string                `json:"description"`
+		Backend     *bridge.ProfileBackend `json:"backend"`
 	}
 	if err := httpx.DecodeJSONBody(w, r, 0, &req); err != nil {
 		httpx.Error(w, httpx.StatusForJSONDecodeError(err), fmt.Errorf("invalid JSON"))
@@ -284,6 +308,17 @@ func (pm *ProfileManager) handleUpdateByID(w http.ResponseWriter, r *http.Reques
 	}
 	if req.UseWhen != nil {
 		updates["useWhen"] = *req.UseWhen
+	}
+	if req.Backend != nil {
+		updates["backend.kind"] = req.Backend.Kind
+		if req.Backend.Steel != nil {
+			updates["backend.steel.proxyUrl"] = req.Backend.Steel.ProxyURL
+			updates["backend.steel.extensionPaths"] = encodeProfileStringList(req.Backend.Steel.ExtensionPaths)
+		}
+		if req.Backend.PinchTab != nil {
+			updates["backend.pinchtab.proxyUrl"] = req.Backend.PinchTab.ProxyURL
+			updates["backend.pinchtab.timezone"] = req.Backend.PinchTab.Timezone
+		}
 	}
 	if len(updates) > 0 {
 		if err := pm.UpdateMeta(finalName, updates); err != nil {

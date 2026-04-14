@@ -29,6 +29,8 @@ export default function ProfileCard({
   const isError = instance?.status === "error";
   const accountText = profile.accountEmail || profile.accountName || "—";
   const sizeText = profile.sizeMB ? `${profile.sizeMB.toFixed(0)} MB` : "—";
+  const backendText =
+    profile.backend?.kind === "steel" ? "Steel Browser" : "PinchTab";
 
   return (
     <Card hover className="flex flex-col">
@@ -50,6 +52,19 @@ export default function ProfileCard({
       <div className="flex flex-1 flex-col gap-2 px-4 py-4">
         <InfoRow label="Size" value={sizeText} />
         <InfoRow label="Account" value={accountText} />
+        <InfoRow label="Backend" value={backendText} />
+        {profile.backend?.kind === "steel" &&
+          profile.backend.steel?.proxyUrl && (
+            <InfoRow label="Proxy" value={profile.backend.steel.proxyUrl} />
+          )}
+        {profile.backend?.kind === "steel" &&
+          profile.backend.steel?.extensionPaths &&
+          profile.backend.steel.extensionPaths.length > 0 && (
+            <InfoRow
+              label="Extensions"
+              value={String(profile.backend.steel.extensionPaths.length)}
+            />
+          )}
         {profile.useWhen && (
           <div className="mt-2 rounded-sm border border-border-subtle bg-[rgb(var(--brand-surface-code-rgb)/0.4)] p-3">
             <div className="dashboard-section-title text-[0.68rem]">

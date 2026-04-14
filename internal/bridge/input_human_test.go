@@ -89,3 +89,65 @@ func TestClickElement_RequiresMinContentLength(t *testing.T) {
 		t.Error("expected error without browser connection")
 	}
 }
+
+func TestHumanPathSegmentProducesPath(t *testing.T) {
+	rng := rand.New(rand.NewSource(12345))
+	points := humanPathSegment(
+		humanPoint{X: 10, Y: 10},
+		humanPoint{X: 400, Y: 300},
+		80,
+		0,
+		rng,
+	)
+	if len(points) < 25 {
+		t.Fatalf("expected at least 25 points, got %d", len(points))
+	}
+	last := points[len(points)-1]
+	if last.X <= 0 || last.Y <= 0 {
+		t.Fatalf("expected positive coordinates, got %#v", last)
+	}
+}
+
+func TestHumanPathUsesOvershootForLongDistance(t *testing.T) {
+	rng := rand.New(rand.NewSource(1))
+	start := humanPoint{X: 20, Y: 20}
+	end := humanPoint{X: 900, Y: 700}
+	box := humanBox{X: 880, Y: 680, Width: 60, Height: 40}
+
+	points := humanPath(start, end, box, rng)
+	if len(points) < 50 {
+		t.Fatalf("expected long path with overshoot-capable movement, got %d points", len(points))
+	}
+	last := points[len(points)-1]
+	if last.X != end.X || last.Y != end.Y {
+		t.Fatalf("expected final point to reach target, got %#v want %#v", last, end)
+	}
+}
+
+func TestHumanPointBoxCentersOnPoint(t *testing.T) {
+	point := humanPoint{X: 200, Y: 120}
+	box := humanPointBox(point)
+
+	if box.Width != humanPointBoxSize || box.Height != humanPointBoxSize {
+		t.Fatalf("unexpected point box size: %#v", box)
+	}
+	if box.X+box.Width/2 != point.X || box.Y+box.Height/2 != point.Y {
+		t.Fatalf("point box is not centered on point: box=%#v point=%#v", box, point)
+	}
+}
+
+func TestHumanPathSegmentDragPathEndsAtTarget(t *testing.T) {
+	rng := rand.New(rand.NewSource(99))
+	start := humanPoint{X: 100, Y: 140}
+	end := humanPoint{X: 260, Y: 320}
+
+	points := humanPathSegment(start, end, 40, 0, rng)
+	if len(points) < 25 {
+		t.Fatalf("expected at least 25 drag path points, got %d", len(points))
+	}
+
+	last := points[len(points)-1]
+	if last.X != end.X || last.Y != end.Y {
+		t.Fatalf("expected path to end at %#v, got %#v", end, last)
+	}
+}

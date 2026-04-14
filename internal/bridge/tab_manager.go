@@ -28,6 +28,7 @@ type TabManager struct {
 	tabs       map[string]*TabEntry
 	accessed   map[string]bool
 	snapshots  map[string]*RefCache
+	cursors    map[string]*CursorState
 	onTabSetup TabSetupFunc
 	dialogMgr  *DialogManager
 	logStore   *ConsoleLogStore
@@ -53,6 +54,7 @@ func NewTabManager(browserCtx context.Context, cfg *config.RuntimeConfig, idMgr 
 		tabs:       make(map[string]*TabEntry),
 		accessed:   make(map[string]bool),
 		snapshots:  make(map[string]*RefCache),
+		cursors:    make(map[string]*CursorState),
 		onTabSetup: onTabSetup,
 		logStore:   logStore,
 		executor:   NewTabExecutor(maxParallel),
@@ -644,6 +646,7 @@ func (tm *TabManager) purgeTrackedTabState(tabID, cdpTargetID string) bool {
 	tm.mu.Lock()
 	delete(tm.tabs, resolvedTabID)
 	delete(tm.snapshots, resolvedTabID)
+	delete(tm.cursors, resolvedTabID)
 	delete(tm.accessed, resolvedTabID)
 	if tm.currentTab == resolvedTabID {
 		tm.currentTab = ""

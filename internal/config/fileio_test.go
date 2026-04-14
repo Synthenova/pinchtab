@@ -54,6 +54,7 @@ func TestLoadAndSaveFileConfigPreservesExplicitZeroValues(t *testing.T) {
 	fc.Server.Bind = ""
 	fc.Server.Token = ""
 	fc.Browser.ExtensionPaths = []string{}
+	fc.Browser.ProxyURL = ""
 	fc.InstanceDefaults.UserAgent = ""
 	fc.Security.IDPI.StrictMode = false
 	fc.Security.IDPI.AllowedDomains = []string{}
@@ -83,5 +84,8 @@ func TestLoadAndSaveFileConfigPreservesExplicitZeroValues(t *testing.T) {
 	}
 	if len(loaded.Browser.ExtensionPaths) != 0 {
 		t.Errorf("loaded extensionPaths = %v, want empty list", loaded.Browser.ExtensionPaths)
+	}
+	if loaded.Browser.ProxyURL != "" {
+		t.Errorf("loaded proxyUrl = %q, want empty string", loaded.Browser.ProxyURL)
 	}
 }

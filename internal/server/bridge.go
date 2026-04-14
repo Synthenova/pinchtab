@@ -28,7 +28,9 @@ func RunBridgeServer(cfg *config.RuntimeConfig, version string) {
 	})
 
 	// Clean up orphaned Chrome processes from previous crashed runs
-	bridge.CleanupOrphanedChromeProcesses(cfg.ProfileDir)
+	if cfg.ExternalBrowserWSURL == "" {
+		bridge.CleanupOrphanedChromeProcesses(cfg.ProfileDir)
+	}
 
 	bridgeInstance := bridge.New(context.Background(), nil, cfg)
 	actStore, err := activity.NewRecorder(activity.Config{

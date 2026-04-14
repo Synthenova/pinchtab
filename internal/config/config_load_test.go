@@ -76,6 +76,9 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if cfg.TabEvictionPolicy != "close_lru" {
 		t.Errorf("default TabEvictionPolicy = %v, want close_lru", cfg.TabEvictionPolicy)
 	}
+	if cfg.ProxyURL != "" {
+		t.Errorf("default ProxyURL = %q, want empty string", cfg.ProxyURL)
+	}
 	if cfg.AttachEnabled {
 		t.Errorf("default AttachEnabled = %v, want false", cfg.AttachEnabled)
 	}
@@ -636,6 +639,21 @@ func TestApplyFileConfigToRuntime_SanitizesChromeExtraFlags(t *testing.T) {
 
 	if cfg.ChromeExtraFlags != "--disable-gpu --ash-no-nudges" {
 		t.Fatalf("ChromeExtraFlags = %q, want %q", cfg.ChromeExtraFlags, "--disable-gpu --ash-no-nudges")
+	}
+}
+
+func TestApplyFileConfigToRuntime_ProxyURL(t *testing.T) {
+	cfg := &RuntimeConfig{}
+	fc := &FileConfig{
+		Browser: BrowserConfig{
+			ProxyURL: "http://proxy.local:3128",
+		},
+	}
+
+	ApplyFileConfigToRuntime(cfg, fc)
+
+	if cfg.ProxyURL != "http://proxy.local:3128" {
+		t.Fatalf("ProxyURL = %q, want %q", cfg.ProxyURL, "http://proxy.local:3128")
 	}
 }
 

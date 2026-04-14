@@ -42,6 +42,18 @@ func InitChrome(cfg *config.RuntimeConfig, bundle *stealth.Bundle, hooks Hooks) 
 	slog.Info("starting chrome initialization", "headless", cfg.Headless, "profile", cfg.ProfileDir, "binary", cfg.ChromeBinary)
 
 	bundle = ensureStealthBundle(cfg, bundle)
+	if cfg.ExternalBrowserWSURL != "" {
+		allocCtx, allocCancel := context.WithCancel(context.Background())
+		browserCtx, browserCancel, launchMode, err := startAttachedChrome(allocCtx, cfg, bundle, cfg.ExternalBrowserWSURL)
+		if err != nil {
+			allocCancel()
+			slog.Error("chrome attachment failed", "headless", cfg.Headless, "error", err.Error())
+			return nil, nil, nil, nil, stealth.LaunchModeUninitialized, fmt.Errorf("failed to attach to browser: %w", err)
+		}
+
+		slog.Info("chrome attached successfully", "headless", cfg.Headless, "profile", cfg.ProfileDir)
+		return allocCtx, allocCancel, browserCtx, browserCancel, launchMode, nil
+	}
 	allocCtx, allocCancel, opts, debugPort := setupAllocator(cfg, bundle, hooks)
 	browserCtx, browserCancel, launchMode, err := startChrome(allocCtx, cfg, bundle, opts, debugPort, hooks)
 	if err != nil {
@@ -54,19 +66,29 @@ func InitChrome(cfg *config.RuntimeConfig, bundle *stealth.Bundle, hooks Hooks) 
 	return allocCtx, allocCancel, browserCtx, browserCancel, launchMode, nil
 }
 
+func startAttachedChrome(parentCtx context.Context, cfg *config.RuntimeConfig, bundle *stealth.Bundle, wsURL string) (context.Context, context.CancelFunc, stealth.LaunchMode, error) {
+	remoteAllocCtx, remoteAllocCancel := chromedp.NewRemoteAllocator(parentCtx, wsURL)
+	browserCtx, browserCancel := chromedp.NewContext(remoteAllocCtx)
+
+	return browserCtx, func() {
+		browserCancel()
+		remoteAllocCancel()
+	}, stealth.LaunchModeAttached, nil
+}
+
 func findChromeBinary() string {
 	var candidates []string
-	if goruntime.GOARCH == "arm64" || goruntime.GOARCH == "arm" {
-		candidates = []string{
-			"/usr/bin/chromium-browser",
-			"/usr/bin/chromium",
-			"/usr/bin/google-chrome",
-			"/usr/bin/google-chrome-stable",
-		}
-	} else {
+	if goruntime.GOOS == "darwin" {
 		candidates = []string{
 			"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
 			"/Applications/Chromium.app/Contents/MacOS/Chromium",
+			"/usr/bin/google-chrome",
+			"/usr/bin/google-chrome-stable",
+			"/usr/bin/chromium",
+			"/usr/bin/chromium-browser",
+		}
+	} else {
+		candidates = []string{
 			"/usr/bin/google-chrome",
 			"/usr/bin/google-chrome-stable",
 			"/usr/bin/chromium",
@@ -149,6 +171,11 @@ func setupAllocator(cfg *config.RuntimeConfig, bundle *stealth.Bundle, hooks Hoo
 		}
 	} else {
 		opts = append(opts, chromedp.Flag("disable-extensions", true))
+	}
+
+	if strings.TrimSpace(cfg.ProxyURL) != "" {
+		opts = append(opts, chromedp.Flag("proxy-server", strings.TrimSpace(cfg.ProxyURL)))
+		slog.Info("using browser proxy", "proxyUrl", strings.TrimSpace(cfg.ProxyURL))
 	}
 
 	if cfg.ProfileDir != "" {

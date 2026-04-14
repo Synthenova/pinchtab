@@ -67,6 +67,41 @@ func submitFormIfButton(ctx context.Context, selector string) (bool, error) {
 }
 
 func (b *Bridge) actionClick(ctx context.Context, req ActionRequest) (map[string]any, error) {
+	if req.Human {
+		if req.Selector != "" {
+			node, err := firstNodeBySelector(ctx, req.Selector)
+			if err != nil {
+				return nil, err
+			}
+			if err := HumanClickElement(ctx, req.TabID, b.TabManager, node.BackendNodeID); err != nil {
+				return nil, err
+			}
+			if req.WaitNav {
+				_ = chromedp.Run(ctx, chromedp.Sleep(b.Config.WaitNavDelay))
+			}
+			return map[string]any{"clicked": true, "human": true}, nil
+		}
+		if req.NodeID > 0 {
+			if err := HumanClickElement(ctx, req.TabID, b.TabManager, cdp.BackendNodeID(req.NodeID)); err != nil {
+				return nil, err
+			}
+			if req.WaitNav {
+				_ = chromedp.Run(ctx, chromedp.Sleep(b.Config.WaitNavDelay))
+			}
+			return map[string]any{"clicked": true, "human": true}, nil
+		}
+		if req.HasXY {
+			if _, err := HumanClick(ctx, req.TabID, b.TabManager, humanPointBox(humanPoint{X: req.X, Y: req.Y})); err != nil {
+				return nil, err
+			}
+			if req.WaitNav {
+				_ = chromedp.Run(ctx, chromedp.Sleep(b.Config.WaitNavDelay))
+			}
+			return map[string]any{"clicked": true, "human": true}, nil
+		}
+		return nil, fmt.Errorf("need selector, ref, nodeId, or x/y coordinates")
+	}
+
 	var err error
 	if req.Selector != "" {
 		// For submit buttons, use requestSubmit() to fire constraint validation,
@@ -99,6 +134,27 @@ func (b *Bridge) actionClick(ctx context.Context, req ActionRequest) (map[string
 }
 
 func (b *Bridge) actionDoubleClick(ctx context.Context, req ActionRequest) (map[string]any, error) {
+	if req.Human {
+		var err error
+		if req.Selector != "" {
+			node, nodeErr := firstNodeBySelector(ctx, req.Selector)
+			if nodeErr != nil {
+				return nil, nodeErr
+			}
+			err = HumanDoubleClickElement(ctx, req.TabID, b.TabManager, node.BackendNodeID)
+		} else if req.NodeID > 0 {
+			err = HumanDoubleClickElement(ctx, req.TabID, b.TabManager, cdp.BackendNodeID(req.NodeID))
+		} else if req.HasXY {
+			_, err = HumanDoubleClick(ctx, req.TabID, b.TabManager, humanPointBox(humanPoint{X: req.X, Y: req.Y}))
+		} else {
+			return nil, fmt.Errorf("need selector, ref, nodeId, or x/y coordinates")
+		}
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"doubleclicked": true, "human": true}, nil
+	}
+
 	var err error
 	if req.Selector != "" {
 		err = chromedp.Run(ctx, chromedp.DoubleClick(req.Selector, chromedp.ByQuery))
@@ -116,6 +172,32 @@ func (b *Bridge) actionDoubleClick(ctx context.Context, req ActionRequest) (map[
 }
 
 func (b *Bridge) actionHover(ctx context.Context, req ActionRequest) (map[string]any, error) {
+	if req.Human {
+		if req.NodeID > 0 {
+			if err := HumanHoverElement(ctx, req.TabID, b.TabManager, cdp.BackendNodeID(req.NodeID)); err != nil {
+				return nil, err
+			}
+			return map[string]any{"hovered": true, "human": true}, nil
+		}
+		if req.Selector != "" {
+			node, err := firstNodeBySelector(ctx, req.Selector)
+			if err != nil {
+				return nil, err
+			}
+			if err := HumanHoverElement(ctx, req.TabID, b.TabManager, node.BackendNodeID); err != nil {
+				return nil, err
+			}
+			return map[string]any{"hovered": true, "human": true}, nil
+		}
+		if req.HasXY {
+			if _, err := HumanHover(ctx, req.TabID, b.TabManager, humanPointBox(humanPoint{X: req.X, Y: req.Y})); err != nil {
+				return nil, err
+			}
+			return map[string]any{"hovered": true, "human": true}, nil
+		}
+		return nil, fmt.Errorf("need selector, ref, nodeId, or x/y coordinates")
+	}
+
 	if req.NodeID > 0 {
 		return map[string]any{"hovered": true}, HoverByNodeID(ctx, req.NodeID)
 	}
@@ -131,6 +213,47 @@ func (b *Bridge) actionHover(ctx context.Context, req ActionRequest) (map[string
 }
 
 func (b *Bridge) actionScroll(ctx context.Context, req ActionRequest) (map[string]any, error) {
+	if req.Human {
+		scrollX := req.ScrollX
+		scrollY := req.ScrollY
+		if scrollX == 0 && scrollY == 0 {
+			scrollY = 800
+		}
+
+		if req.NodeID > 0 {
+			if err := HumanScrollElement(ctx, req.TabID, b.TabManager, cdp.BackendNodeID(req.NodeID), scrollX, scrollY); err != nil {
+				return nil, err
+			}
+			return map[string]any{"scrolled": true, "x": scrollX, "y": scrollY, "human": true}, nil
+		}
+		if req.Selector != "" {
+			node, err := firstNodeBySelector(ctx, req.Selector)
+			if err != nil {
+				return nil, err
+			}
+			if err := HumanScrollElement(ctx, req.TabID, b.TabManager, node.BackendNodeID, scrollX, scrollY); err != nil {
+				return nil, err
+			}
+			return map[string]any{"scrolled": true, "x": scrollX, "y": scrollY, "human": true}, nil
+		}
+
+		scrollTargetX := req.X
+		scrollTargetY := req.Y
+		if !req.HasXY {
+			var err error
+			scrollTargetX, scrollTargetY, err = scrollViewportCenter(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("resolve scroll viewport center: %w", err)
+			}
+		}
+
+		_, err := HumanScroll(ctx, req.TabID, b.TabManager, humanPointBox(humanPoint{X: scrollTargetX, Y: scrollTargetY}), scrollX, scrollY)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"scrolled": true, "x": scrollX, "y": scrollY, "human": true}, nil
+	}
+
 	if req.NodeID > 0 {
 		return map[string]any{"scrolled": true}, ScrollByNodeID(ctx, req.NodeID)
 	}
@@ -159,6 +282,27 @@ func (b *Bridge) actionDrag(ctx context.Context, req ActionRequest) (map[string]
 	if req.DragX == 0 && req.DragY == 0 {
 		return nil, fmt.Errorf("dragX or dragY required for drag")
 	}
+	if req.Human {
+		if req.NodeID > 0 {
+			err := HumanDragElement(ctx, req.TabID, b.TabManager, cdp.BackendNodeID(req.NodeID), req.DragX, req.DragY)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"dragged": true, "dragX": req.DragX, "dragY": req.DragY, "human": true}, nil
+		}
+		if req.Selector != "" {
+			node, err := firstNodeBySelector(ctx, req.Selector)
+			if err != nil {
+				return nil, err
+			}
+			err = HumanDragElement(ctx, req.TabID, b.TabManager, node.BackendNodeID, req.DragX, req.DragY)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"dragged": true, "dragX": req.DragX, "dragY": req.DragY, "human": true}, nil
+		}
+		return nil, fmt.Errorf("need selector, ref, or nodeId")
+	}
 	if req.NodeID > 0 {
 		err := DragByNodeID(ctx, req.NodeID, req.DragX, req.DragY)
 		if err != nil {
@@ -181,25 +325,28 @@ func (b *Bridge) actionDrag(ctx context.Context, req ActionRequest) (map[string]
 }
 
 func (b *Bridge) actionHumanClick(ctx context.Context, req ActionRequest) (map[string]any, error) {
-	if req.NodeID > 0 {
-		// req.NodeID is a backendDOMNodeId from the accessibility tree
-		if err := ClickElement(ctx, cdp.BackendNodeID(req.NodeID)); err != nil {
-			return nil, err
-		}
-		return map[string]any{"clicked": true, "human": true}, nil
-	}
-	if req.Selector != "" {
-		node, err := firstNodeBySelector(ctx, req.Selector)
-		if err != nil {
-			return nil, err
-		}
-		// Use BackendNodeID from the DOM node
-		if err := ClickElement(ctx, node.BackendNodeID); err != nil {
-			return nil, err
-		}
-		return map[string]any{"clicked": true, "human": true}, nil
-	}
-	return nil, fmt.Errorf("need selector, ref, or nodeId")
+	req.Human = true
+	return b.actionClick(ctx, req)
+}
+
+func (b *Bridge) actionHumanDoubleClick(ctx context.Context, req ActionRequest) (map[string]any, error) {
+	req.Human = true
+	return b.actionDoubleClick(ctx, req)
+}
+
+func (b *Bridge) actionHumanDrag(ctx context.Context, req ActionRequest) (map[string]any, error) {
+	req.Human = true
+	return b.actionDrag(ctx, req)
+}
+
+func (b *Bridge) actionHumanHover(ctx context.Context, req ActionRequest) (map[string]any, error) {
+	req.Human = true
+	return b.actionHover(ctx, req)
+}
+
+func (b *Bridge) actionHumanScroll(ctx context.Context, req ActionRequest) (map[string]any, error) {
+	req.Human = true
+	return b.actionScroll(ctx, req)
 }
 
 func (b *Bridge) actionScrollIntoView(ctx context.Context, req ActionRequest) (map[string]any, error) {

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -450,6 +451,13 @@ func TestProfileMetaReadWrite(t *testing.T) {
 	meta := ProfileMeta{
 		UseWhen:     "I need to access work email",
 		Description: "Work profile for corporate tasks",
+		Backend: &bridge.ProfileBackend{
+			Kind: "steel",
+			Steel: &bridge.ProfileBackendSteel{
+				ProxyURL:       "http://proxy.local:8080",
+				ExtensionPaths: []string{"/tmp/ext-one", "/tmp/ext-two"},
+			},
+		},
 	}
 	if err := pm.CreateWithMeta("work-profile", meta); err != nil {
 		t.Fatal(err)
@@ -462,6 +470,52 @@ func TestProfileMetaReadWrite(t *testing.T) {
 	if readMeta.Description != "Work profile for corporate tasks" {
 		t.Errorf("expected description 'Work profile for corporate tasks', got %q", readMeta.Description)
 	}
+	if readMeta.Backend == nil || readMeta.Backend.Kind != "steel" {
+		t.Fatalf("expected steel backend in profile meta, got %#v", readMeta.Backend)
+	}
+	if readMeta.Backend.Steel == nil {
+		t.Fatalf("expected steel backend config in profile meta")
+	}
+	if got := readMeta.Backend.Steel.ProxyURL; got != "http://proxy.local:8080" {
+		t.Errorf("expected proxy URL to persist, got %q", got)
+	}
+	if !reflect.DeepEqual([]string{"/tmp/ext-one", "/tmp/ext-two"}, readMeta.Backend.Steel.ExtensionPaths) {
+		t.Errorf("expected extension paths to persist, got %#v", readMeta.Backend.Steel.ExtensionPaths)
+	}
+}
+
+func TestProfileMetaReadWritePinchTabBackend(t *testing.T) {
+	dir := t.TempDir()
+	pm := NewProfileManager(dir)
+
+	meta := ProfileMeta{
+		UseWhen:     "Use for personal browsing",
+		Description: "Default browser profile",
+		Backend: &bridge.ProfileBackend{
+			Kind: "pinchtab",
+			PinchTab: &bridge.ProfileBackendPinchTab{
+				ProxyURL: "http://proxy.local:3128",
+				Timezone: "Asia/Singapore",
+			},
+		},
+	}
+	if err := pm.CreateWithMeta("default-profile", meta); err != nil {
+		t.Fatal(err)
+	}
+
+	readMeta := readProfileMeta(filepath.Join(dir, profileID("default-profile")))
+	if readMeta.Backend == nil || readMeta.Backend.Kind != "pinchtab" {
+		t.Fatalf("expected pinchtab backend in profile meta, got %#v", readMeta.Backend)
+	}
+	if readMeta.Backend.PinchTab == nil {
+		t.Fatalf("expected pinchtab backend config in profile meta")
+	}
+	if got := readMeta.Backend.PinchTab.ProxyURL; got != "http://proxy.local:3128" {
+		t.Errorf("expected proxy URL to persist, got %q", got)
+	}
+	if got := readMeta.Backend.PinchTab.Timezone; got != "Asia/Singapore" {
+		t.Errorf("expected timezone to persist, got %q", got)
+	}
 }
 
 func TestProfileUpdateMeta(t *testing.T) {
@@ -471,7 +525,7 @@ func TestProfileUpdateMeta(t *testing.T) {
 
 	_ = pm.Create("updatable")
 
-	body := `{"name":"updatable","useWhen":"Updated use case","description":"Updated description"}`
+	body := `{"name":"updatable","useWhen":"Updated use case","description":"Updated description","backend":{"kind":"steel","steel":{"proxyUrl":"http://proxy.local:8080","extensionPaths":["/tmp/ext-one"," /tmp/ext-two ","/tmp/ext-one"]}}}`
 	req := httptest.NewRequest("PATCH", "/profiles/meta", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -479,6 +533,58 @@ func TestProfileUpdateMeta(t *testing.T) {
 
 	if w.Code != 200 {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	profiles, err := pm.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("expected 1 profile, got %d", len(profiles))
+	}
+	if profiles[0].Backend == nil || profiles[0].Backend.Steel == nil {
+		t.Fatalf("expected steel backend after update, got %#v", profiles[0].Backend)
+	}
+	if got := profiles[0].Backend.Steel.ProxyURL; got != "http://proxy.local:8080" {
+		t.Errorf("expected proxy URL to update, got %q", got)
+	}
+	if !reflect.DeepEqual([]string{"/tmp/ext-one", "/tmp/ext-two"}, profiles[0].Backend.Steel.ExtensionPaths) {
+		t.Errorf("expected normalized extension paths, got %#v", profiles[0].Backend.Steel.ExtensionPaths)
+	}
+}
+
+func TestProfileUpdateMetaPinchTab(t *testing.T) {
+	pm := NewProfileManager(t.TempDir())
+	mux := http.NewServeMux()
+	pm.RegisterHandlers(mux)
+
+	_ = pm.Create("personal")
+
+	body := `{"name":"personal","backend":{"kind":"pinchtab","pinchtab":{"proxyUrl":"http://proxy.local:3128","timezone":"Asia/Kolkata"}}}`
+	req := httptest.NewRequest("PATCH", "/profiles/meta", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	profiles, err := pm.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("expected 1 profile, got %d", len(profiles))
+	}
+	if profiles[0].Backend == nil || profiles[0].Backend.PinchTab == nil {
+		t.Fatalf("expected pinchtab backend after update, got %#v", profiles[0].Backend)
+	}
+	if got := profiles[0].Backend.PinchTab.ProxyURL; got != "http://proxy.local:3128" {
+		t.Errorf("expected proxy URL to update, got %q", got)
+	}
+	if got := profiles[0].Backend.PinchTab.Timezone; got != "Asia/Kolkata" {
+		t.Errorf("expected timezone to update, got %q", got)
 	}
 }
 

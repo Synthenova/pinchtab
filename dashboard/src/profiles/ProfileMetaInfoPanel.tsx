@@ -28,6 +28,8 @@ export default function ProfileMetaInfoPanel({ profile, instance }: Props) {
     : instance?.headless
       ? "Headless"
       : "Headed";
+  const backendText =
+    profile.backend?.kind === "steel" ? "Steel Browser" : "PinchTab";
 
   return (
     <MetaBlock label="Profile panel">
@@ -48,6 +50,64 @@ export default function ProfileMetaInfoPanel({ profile, instance }: Props) {
           </span>
           <span className="text-right">{browserType}</span>
         </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="dashboard-section-title text-[0.68rem]">
+            Backend
+          </span>
+          <span className="text-right">{backendText}</span>
+        </div>
+        {profile.backend?.kind !== "steel" &&
+          profile.backend?.pinchtab?.proxyUrl && (
+            <div>
+              <div className="dashboard-section-title mb-1 text-[0.68rem]">
+                Proxy
+              </div>
+              <code className="dashboard-mono block break-all text-xs text-text-secondary">
+                {profile.backend.pinchtab.proxyUrl}
+              </code>
+            </div>
+          )}
+        {profile.backend?.kind !== "steel" &&
+          profile.backend?.pinchtab?.timezone && (
+            <div>
+              <div className="dashboard-section-title mb-1 text-[0.68rem]">
+                Timezone
+              </div>
+              <code className="dashboard-mono block break-all text-xs text-text-secondary">
+                {profile.backend.pinchtab.timezone}
+              </code>
+            </div>
+          )}
+        {profile.backend?.kind === "steel" &&
+          profile.backend.steel?.proxyUrl && (
+            <div>
+              <div className="dashboard-section-title mb-1 text-[0.68rem]">
+                Proxy
+              </div>
+              <code className="dashboard-mono block break-all text-xs text-text-secondary">
+                {profile.backend.steel.proxyUrl}
+              </code>
+            </div>
+          )}
+        {profile.backend?.kind === "steel" &&
+          profile.backend.steel?.extensionPaths &&
+          profile.backend.steel.extensionPaths.length > 0 && (
+            <div>
+              <div className="dashboard-section-title mb-1 text-[0.68rem]">
+                Extensions
+              </div>
+              <div className="space-y-1">
+                {profile.backend.steel.extensionPaths.map((path) => (
+                  <code
+                    key={path}
+                    className="dashboard-mono block break-all text-xs text-text-secondary"
+                  >
+                    {path}
+                  </code>
+                ))}
+              </div>
+            </div>
+          )}
         <div className="flex items-center justify-between gap-3">
           <span className="dashboard-section-title text-[0.68rem]">Size</span>
           <span className="text-right">{sizeText}</span>

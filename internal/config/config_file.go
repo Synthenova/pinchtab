@@ -175,11 +175,13 @@ type serverConfigJSON struct {
 }
 
 type browserConfigJSON struct {
-	ChromeVersion    string   `json:"version"`
-	ChromeBinary     string   `json:"binary"`
-	ChromeDebugPort  *int     `json:"remoteDebuggingPort,omitempty"`
-	ChromeExtraFlags string   `json:"extraFlags"`
-	ExtensionPaths   []string `json:"extensionPaths"`
+	ChromeVersion        string   `json:"version"`
+	ChromeBinary         string   `json:"binary"`
+	ChromeDebugPort      *int     `json:"remoteDebuggingPort,omitempty"`
+	ExternalBrowserWSURL string   `json:"externalBrowserWsUrl,omitempty"`
+	ChromeExtraFlags     string   `json:"extraFlags"`
+	ProxyURL             string   `json:"proxyUrl"`
+	ExtensionPaths       []string `json:"extensionPaths"`
 }
 
 type instanceDefaultsConfigJSON struct {
@@ -346,11 +348,13 @@ func (fc FileConfig) MarshalJSON() ([]byte, error) {
 			CookieSecure:      fc.Server.CookieSecure,
 		},
 		Browser: browserConfigJSON{
-			ChromeVersion:    fc.Browser.ChromeVersion,
-			ChromeBinary:     fc.Browser.ChromeBinary,
-			ChromeDebugPort:  fc.Browser.ChromeDebugPort,
-			ChromeExtraFlags: fc.Browser.ChromeExtraFlags,
-			ExtensionPaths:   copyStringSlice(fc.Browser.ExtensionPaths),
+			ChromeVersion:        fc.Browser.ChromeVersion,
+			ChromeBinary:         fc.Browser.ChromeBinary,
+			ChromeDebugPort:      fc.Browser.ChromeDebugPort,
+			ExternalBrowserWSURL: fc.Browser.ExternalBrowserWSURL,
+			ChromeExtraFlags:     fc.Browser.ChromeExtraFlags,
+			ProxyURL:             fc.Browser.ProxyURL,
+			ExtensionPaths:       copyStringSlice(fc.Browser.ExtensionPaths),
 		},
 		InstanceDefaults: instanceDefaultsConfigJSON{
 			Mode:              fc.InstanceDefaults.Mode,
@@ -548,11 +552,13 @@ func FileConfigFromRuntime(cfg *RuntimeConfig) FileConfig {
 			CookieSecure:      cfg.CookieSecure,
 		},
 		Browser: BrowserConfig{
-			ChromeVersion:    cfg.ChromeVersion,
-			ChromeBinary:     cfg.ChromeBinary,
-			ChromeDebugPort:  intPtrIfPositive(cfg.ChromeDebugPort),
-			ChromeExtraFlags: cfg.ChromeExtraFlags,
-			ExtensionPaths:   append([]string(nil), cfg.ExtensionPaths...),
+			ChromeVersion:        cfg.ChromeVersion,
+			ChromeBinary:         cfg.ChromeBinary,
+			ChromeDebugPort:      intPtrIfPositive(cfg.ChromeDebugPort),
+			ExternalBrowserWSURL: cfg.ExternalBrowserWSURL,
+			ChromeExtraFlags:     cfg.ChromeExtraFlags,
+			ProxyURL:             cfg.ProxyURL,
+			ExtensionPaths:       append([]string(nil), cfg.ExtensionPaths...),
 		},
 		InstanceDefaults: InstanceDefaultsConfig{
 			Mode:              mode,

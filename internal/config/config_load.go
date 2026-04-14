@@ -38,25 +38,27 @@ func Load() *RuntimeConfig {
 		MaxRedirects:           -1, // Unlimited by default; set to N to limit redirect hops
 
 		// Browser / instance defaults
-		Headless:          true,
-		NoRestore:         false,
-		ProfileDir:        "",
-		ProfilesBaseDir:   "",
-		DefaultProfile:    "default",
-		ChromeVersion:     "144.0.7559.133",
-		Timezone:          "",
-		BlockImages:       false,
-		BlockMedia:        false,
-		BlockAds:          false,
-		MaxTabs:           20,
-		MaxParallelTabs:   0,
-		ChromeBinary:      "", // Set via config.json only
-		ChromeExtraFlags:  "",
-		ExtensionPaths:    nil,
-		UserAgent:         "",
-		NoAnimations:      false,
-		StealthLevel:      "light",
-		TabEvictionPolicy: "close_lru",
+		Headless:             true,
+		NoRestore:            false,
+		ProfileDir:           "",
+		ProfilesBaseDir:      "",
+		DefaultProfile:       "default",
+		ChromeVersion:        "144.0.7559.133",
+		Timezone:             "",
+		BlockImages:          false,
+		BlockMedia:           false,
+		BlockAds:             false,
+		MaxTabs:              20,
+		MaxParallelTabs:      0,
+		ChromeBinary:         "", // Set via config.json only
+		ExternalBrowserWSURL: "",
+		ChromeExtraFlags:     "",
+		ProxyURL:             "",
+		ExtensionPaths:       nil,
+		UserAgent:            "",
+		NoAnimations:         false,
+		StealthLevel:         "light",
+		TabEvictionPolicy:    "close_lru",
 
 		// Timeout defaults
 		ActionTimeout:   30 * time.Second,
@@ -346,9 +348,13 @@ func applyFileConfig(cfg *RuntimeConfig, fc *FileConfig) {
 	if fc.Browser.ChromeDebugPort != nil && *fc.Browser.ChromeDebugPort > 0 {
 		cfg.ChromeDebugPort = *fc.Browser.ChromeDebugPort
 	}
+	if fc.Browser.ExternalBrowserWSURL != "" {
+		cfg.ExternalBrowserWSURL = fc.Browser.ExternalBrowserWSURL
+	}
 	if fc.Browser.ChromeExtraFlags != "" {
 		cfg.ChromeExtraFlags = SanitizeChromeExtraFlags(fc.Browser.ChromeExtraFlags)
 	}
+	cfg.ProxyURL = fc.Browser.ProxyURL
 	if len(fc.Browser.ExtensionPaths) > 0 {
 		cfg.ExtensionPaths = fc.Browser.ExtensionPaths
 	}

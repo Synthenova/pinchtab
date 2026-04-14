@@ -126,9 +126,20 @@ func (o *Orchestrator) monitor(inst *InstanceInternal) {
 		}
 	}
 	instCopy := inst.Instance
+	steelCmd := inst.steelCmd
+	steelBaseURL := inst.steelBaseURL
+	steelSessionID := inst.steelSessionID
+	browserProxy := inst.browserProxy
 	o.mu.Unlock()
 	if eventType != "" {
 		o.emitEvent(eventType, &instCopy)
+	}
+	if eventType == "instance.error" && steelCmd != nil {
+		releaseSteelSession(steelBaseURL, steelSessionID)
+		stopExternalProcess(steelCmd)
+	}
+	if eventType == "instance.error" && browserProxy != nil {
+		_ = browserProxy.Close()
 	}
 
 	if !exitedEarly {
@@ -144,6 +155,7 @@ func (o *Orchestrator) monitor(inst *InstanceInternal) {
 	o.mu.Unlock()
 	if wasStopped {
 		o.emitEvent("instance.stopped", &instCopy)
+		o.markStopped(inst.ID)
 	}
 	slog.Info("instance exited", "id", inst.ID)
 }

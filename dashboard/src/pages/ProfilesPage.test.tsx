@@ -30,6 +30,9 @@ const profiles: Profile[] = [
     sizeMB: 12,
     running: false,
     useWhen: "Use for personal logins",
+    backend: {
+      kind: "pinchtab",
+    },
   },
   {
     id: "prof_beta",
@@ -40,6 +43,13 @@ const profiles: Profile[] = [
     sizeMB: 24,
     running: true,
     accountEmail: "team@example.com",
+    backend: {
+      kind: "steel",
+      steel: {
+        proxyUrl: "http://proxy.local:8080",
+        extensionPaths: ["/tmp/ext-one"],
+      },
+    },
   },
 ];
 
@@ -170,5 +180,106 @@ describe("ProfilesPage", () => {
     await userEvent.type(nameInput, "alpha-updated");
 
     expect(saveButton).toBeEnabled();
+  });
+
+  it("saves Steel proxy and extension edits", async () => {
+    const { updateProfile } = await import("../services/api");
+    vi.mocked(updateProfile).mockResolvedValue({
+      status: "updated",
+      id: "prof_beta",
+      name: "beta",
+    });
+
+    renderProfilesPage();
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Profile: beta/i }),
+      ).toBeInTheDocument();
+    });
+
+    const detailPanel = getDetailPanel()!;
+    const proxyInput = within(detailPanel).getByPlaceholderText(
+      "http://user:pass@host:port",
+    );
+    const extensionsInput = within(detailPanel).getByPlaceholderText(
+      "/path/to/ext-one, /path/to/ext-two",
+    );
+    const saveButton = within(detailPanel).getByRole("button", {
+      name: "Save",
+    });
+
+    await userEvent.clear(proxyInput);
+    await userEvent.type(proxyInput, "http://proxy2.local:9090");
+    await userEvent.clear(extensionsInput);
+    await userEvent.type(extensionsInput, "/tmp/ext-two, /tmp/ext-three");
+    await userEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(updateProfile).toHaveBeenCalledWith("prof_beta", {
+        name: undefined,
+        useWhen: undefined,
+        backend: {
+          kind: "steel",
+          steel: {
+            proxyUrl: "http://proxy2.local:9090",
+            extensionPaths: ["/tmp/ext-two", "/tmp/ext-three"],
+          },
+        },
+      });
+    });
+  });
+
+  it("saves PinchTab proxy and timezone edits", async () => {
+    const { updateProfile } = await import("../services/api");
+    vi.mocked(updateProfile).mockResolvedValue({
+      status: "updated",
+      id: "prof_alpha",
+      name: "alpha",
+    });
+
+    renderProfilesPage();
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Profile: beta/i }),
+      ).toBeInTheDocument();
+    });
+
+    await clickSidebarProfile("alpha");
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Profile: alpha/i }),
+      ).toBeInTheDocument();
+    });
+
+    const detailPanel = getDetailPanel()!;
+    const proxyInput = within(detailPanel).getByPlaceholderText(
+      "http://user:pass@host:port",
+    );
+    const timezoneInput =
+      within(detailPanel).getByPlaceholderText("Asia/Kolkata");
+    const saveButton = within(detailPanel).getByRole("button", {
+      name: "Save",
+    });
+
+    await userEvent.type(proxyInput, "http://proxy.local:3128");
+    await userEvent.type(timezoneInput, "Asia/Singapore");
+    await userEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(updateProfile).toHaveBeenCalledWith("prof_alpha", {
+        name: undefined,
+        useWhen: undefined,
+        backend: {
+          kind: "pinchtab",
+          pinchtab: {
+            proxyUrl: "http://proxy.local:3128",
+            timezone: "Asia/Singapore",
+          },
+        },
+      });
+    });
   });
 });

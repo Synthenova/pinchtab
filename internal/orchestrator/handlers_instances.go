@@ -16,6 +16,7 @@ type startInstanceRequest struct {
 	ProfileID      string   `json:"profileId,omitempty"`
 	Mode           string   `json:"mode,omitempty"`
 	Port           string   `json:"port,omitempty"`
+	ProxyURL       string   `json:"proxyUrl,omitempty"`
 	ExtensionPaths []string `json:"extensionPaths,omitempty"`
 }
 
@@ -134,7 +135,8 @@ func (o *Orchestrator) handleStartByInstanceID(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	started, err := o.Launch(profileName, port, headless, nil)
+	proxyURL, extensionPaths := o.resolveSteelLaunchDefaults(profileName, "", nil)
+	started, err := o.LaunchWithOptions(profileName, port, headless, extensionPaths, proxyURL)
 	if err != nil {
 		statusCode := classifyLaunchError(err)
 		httpx.Error(w, statusCode, err)
@@ -251,8 +253,8 @@ func (o *Orchestrator) startInstanceWithRequest(w http.ResponseWriter, r *http.R
 	}
 
 	headless := req.Mode != "headed"
-
-	inst, err := o.Launch(profileName, req.Port, headless, req.ExtensionPaths)
+	proxyURL, extensionPaths := o.resolveSteelLaunchDefaults(profileName, req.ProxyURL, req.ExtensionPaths)
+	inst, err := o.LaunchWithOptions(profileName, req.Port, headless, extensionPaths, proxyURL)
 	if err != nil {
 		statusCode := classifyLaunchError(err)
 		httpx.Error(w, statusCode, err)

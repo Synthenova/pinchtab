@@ -4,26 +4,46 @@ package types
 
 import "time"
 
+// ProfileBackendSteel mirrors the Steel-specific backend settings for a profile.
+type ProfileBackendSteel struct {
+	ProxyURL       string   `json:"proxyUrl,omitempty"`
+	ExtensionPaths []string `json:"extensionPaths,omitempty"`
+}
+
+// ProfileBackendPinchTab mirrors the PinchTab-specific backend settings for a profile.
+type ProfileBackendPinchTab struct {
+	ProxyURL string `json:"proxyUrl,omitempty"`
+	Timezone string `json:"timezone,omitempty"`
+}
+
+// ProfileBackend describes which browser runtime backs a profile.
+type ProfileBackend struct {
+	Kind     string                  `json:"kind,omitempty"`
+	Steel    *ProfileBackendSteel    `json:"steel,omitempty"`
+	PinchTab *ProfileBackendPinchTab `json:"pinchtab,omitempty"`
+}
+
 // Profile represents a browser profile stored on disk.
 // Matches internal/bridge/api.go ProfileInfo
 type Profile struct {
-	ID                string    `json:"id,omitempty"`
-	Name              string    `json:"name"`
-	Path              string    `json:"path,omitempty"`
-	PathExists        bool      `json:"pathExists,omitempty"`
-	Created           time.Time `json:"created"`
-	LastUsed          time.Time `json:"lastUsed"`
-	DiskUsage         int64     `json:"diskUsage"`
-	SizeMB            float64   `json:"sizeMB,omitempty"`
-	Running           bool      `json:"running"`
-	Temporary         bool      `json:"temporary,omitempty"`
-	Source            string    `json:"source,omitempty"`
-	ChromeProfileName string    `json:"chromeProfileName,omitempty"`
-	AccountEmail      string    `json:"accountEmail,omitempty"`
-	AccountName       string    `json:"accountName,omitempty"`
-	HasAccount        bool      `json:"hasAccount,omitempty"`
-	UseWhen           string    `json:"useWhen,omitempty"`
-	Description       string    `json:"description,omitempty"`
+	ID                string          `json:"id,omitempty"`
+	Name              string          `json:"name"`
+	Path              string          `json:"path,omitempty"`
+	PathExists        bool            `json:"pathExists,omitempty"`
+	Created           time.Time       `json:"created"`
+	LastUsed          time.Time       `json:"lastUsed"`
+	DiskUsage         int64           `json:"diskUsage"`
+	SizeMB            float64         `json:"sizeMB,omitempty"`
+	Running           bool            `json:"running"`
+	Temporary         bool            `json:"temporary,omitempty"`
+	Source            string          `json:"source,omitempty"`
+	ChromeProfileName string          `json:"chromeProfileName,omitempty"`
+	AccountEmail      string          `json:"accountEmail,omitempty"`
+	AccountName       string          `json:"accountName,omitempty"`
+	HasAccount        bool            `json:"hasAccount,omitempty"`
+	UseWhen           string          `json:"useWhen,omitempty"`
+	Description       string          `json:"description,omitempty"`
+	Backend           *ProfileBackend `json:"backend,omitempty"`
 }
 
 // Instance represents a running browser instance.
@@ -146,9 +166,10 @@ type ServerInfo struct {
 
 // CreateProfileRequest is the request body for creating a profile.
 type CreateProfileRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	UseWhen     string `json:"useWhen,omitempty"`
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	UseWhen     string          `json:"useWhen,omitempty"`
+	Backend     *ProfileBackend `json:"backend,omitempty"`
 }
 
 // CreateProfileResponse is returned after creating a profile.

@@ -31,6 +31,7 @@ func HandleConfigShow(cfg *config.RuntimeConfig) {
 	fmt.Printf("  Max Tabs:       %d\n", cfg.MaxTabs)
 	fmt.Printf("  Stealth:        %s\n", cfg.StealthLevel)
 	fmt.Printf("  Tab Eviction:   %s\n", cfg.TabEvictionPolicy)
+	fmt.Printf("  Proxy:          %s\n", cfg.ProxyURL)
 	fmt.Printf("  Extensions:     %v\n", cfg.ExtensionPaths)
 	fmt.Println()
 	fmt.Println(styleStdout(headingStyle, "Multi-Instance"))

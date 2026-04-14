@@ -8,6 +8,28 @@ These types are exported to TypeScript via tygo.
 */
 
 /**
+ * ProfileBackendSteel mirrors the Steel-specific backend settings for a profile.
+ */
+export interface ProfileBackendSteel {
+  proxyUrl?: string;
+  extensionPaths?: string[];
+}
+/**
+ * ProfileBackendPinchTab mirrors the PinchTab-specific backend settings for a profile.
+ */
+export interface ProfileBackendPinchTab {
+  proxyUrl?: string;
+  timezone?: string;
+}
+/**
+ * ProfileBackend describes which browser runtime backs a profile.
+ */
+export interface ProfileBackend {
+  kind?: string;
+  steel?: ProfileBackendSteel;
+  pinchtab?: ProfileBackendPinchTab;
+}
+/**
  * Profile represents a browser profile stored on disk.
  * Matches internal/bridge/api.go ProfileInfo
  */
@@ -29,6 +51,7 @@ export interface Profile {
   hasAccount?: boolean;
   useWhen?: string;
   description?: string;
+  backend?: ProfileBackend;
 }
 /**
  * Instance represents a running browser instance.
@@ -167,6 +190,7 @@ export interface CreateProfileRequest {
   name: string;
   description?: string;
   useWhen?: string;
+  backend?: ProfileBackend;
 }
 /**
  * CreateProfileResponse is returned after creating a profile.
