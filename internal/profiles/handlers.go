@@ -132,6 +132,30 @@ func appendBackendUpdates(updates map[string]string, backend *bridge.ProfileBack
 		if hasJSONField(pinchTabRaw, "launchArgs") {
 			updates["backend.pinchtab.launchArgs"] = encodeProfileStringList(backend.PinchTab.LaunchArgs)
 		}
+		if backend.PinchTab.Cloud != nil {
+			cloudRaw := jsonObjectField(pinchTabRaw, "cloud")
+			if hasJSONField(cloudRaw, "enabled") {
+				updates["backend.pinchtab.cloud.enabled"] = formatOptionalBool(backend.PinchTab.Cloud.Enabled)
+			}
+			if hasJSONField(cloudRaw, "provider") {
+				updates["backend.pinchtab.cloud.provider"] = backend.PinchTab.Cloud.Provider
+			}
+			if hasJSONField(cloudRaw, "bucket") {
+				updates["backend.pinchtab.cloud.bucket"] = backend.PinchTab.Cloud.Bucket
+			}
+			if hasJSONField(cloudRaw, "prefix") {
+				updates["backend.pinchtab.cloud.prefix"] = backend.PinchTab.Cloud.Prefix
+			}
+			if hasJSONField(cloudRaw, "profileId") {
+				updates["backend.pinchtab.cloud.profileId"] = backend.PinchTab.Cloud.ProfileID
+			}
+			if hasJSONField(cloudRaw, "credentialPath") {
+				updates["backend.pinchtab.cloud.credentialPath"] = backend.PinchTab.Cloud.CredentialPath
+			}
+			if hasJSONField(cloudRaw, "keepLocalCache") {
+				updates["backend.pinchtab.cloud.keepLocalCache"] = formatOptionalBool(backend.PinchTab.Cloud.KeepLocalCache)
+			}
+		}
 	}
 }
 
@@ -196,6 +220,7 @@ func (pm *ProfileManager) handleList(w http.ResponseWriter, r *http.Request) {
 					"useWhen":           p.UseWhen,
 					"description":       p.Description,
 					"backend":           p.Backend,
+					"cloudStatus":       p.CloudStatus,
 				})
 			}
 		}

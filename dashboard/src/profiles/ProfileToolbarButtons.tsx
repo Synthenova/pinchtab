@@ -7,9 +7,13 @@ interface Props {
   instance?: Instance;
   onLaunch: () => void;
   onStop: () => void;
+  onSync?: () => void;
   onSave: () => void;
   onDelete: () => void;
   isSaveDisabled: boolean;
+  isLaunchDisabled?: boolean;
+  launchDisabledReason?: string;
+  syncLoading?: boolean;
 }
 
 export default function ProfileToolbarButtons({
@@ -17,12 +21,17 @@ export default function ProfileToolbarButtons({
   instance,
   onLaunch,
   onStop,
+  onSync,
   onSave,
   onDelete,
   isSaveDisabled,
+  isLaunchDisabled = false,
+  launchDisabledReason,
+  syncLoading = false,
 }: Props) {
   const [copyFeedback, setCopyFeedback] = useState("");
   const isRunning = instance?.status === "running";
+  const cloudEnabled = !!profile.backend?.pinchtab?.cloud?.enabled;
 
   const handleCopyId = async () => {
     if (!profile.id) return;
@@ -46,6 +55,18 @@ export default function ProfileToolbarButtons({
       <Button size="sm" variant="secondary" onClick={onDelete}>
         Delete
       </Button>
+      {cloudEnabled && onSync && (
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={onSync}
+          loading={syncLoading}
+          disabled={isRunning}
+          title={isRunning ? "Stop the browser before syncing" : undefined}
+        >
+          Sync
+        </Button>
+      )}
       <Button
         size="sm"
         variant="primary"
@@ -59,7 +80,13 @@ export default function ProfileToolbarButtons({
           Stop
         </Button>
       ) : (
-        <Button size="sm" variant="primary" onClick={onLaunch}>
+        <Button
+          size="sm"
+          variant="primary"
+          onClick={onLaunch}
+          disabled={isLaunchDisabled}
+          title={launchDisabledReason}
+        >
           Start
         </Button>
       )}

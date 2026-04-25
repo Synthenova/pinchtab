@@ -54,6 +54,7 @@ export default function ProfilesPage() {
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
+  const [syncingProfileId, setSyncingProfileId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const locationState = location.state as ProfilesLocationState | null;
@@ -154,6 +155,44 @@ export default function ProfilesPage() {
       loadProfiles(updated.id || selectedProfile.id);
     } catch (e) {
       console.error("Failed to update profile", e);
+    }
+  };
+
+  const handleSync = async (profile: Profile) => {
+    if (!profile.id || syncingProfileId) return;
+    setSyncingProfileId(profile.id);
+    setBanner(null);
+    try {
+      const status = await api.startProfileSync(profile.id);
+      setBanner(
+        status.state === "ready"
+          ? `Profile ${profile.name} is already synced.`
+          : `Started cloud sync for ${profile.name}.`,
+      );
+
+      let attempts = 0;
+      while (attempts < 90) {
+        attempts += 1;
+        const next = await api.fetchProfileSync(profile.id);
+        await loadProfiles(profile.id);
+        if (next.state === "ready") {
+          setBanner(`Cloud sync completed for ${profile.name}.`);
+          break;
+        }
+        if (next.state === "error") {
+          setBanner(next.error || `Cloud sync failed for ${profile.name}.`);
+          break;
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 1000));
+      }
+    } catch (e) {
+      console.error("Failed to sync profile", e);
+      setBanner(
+        e instanceof Error ? e.message : `Failed to sync ${profile.name}.`,
+      );
+    } finally {
+      setSyncingProfileId(null);
+      await loadProfiles(profile.id);
     }
   };
 
@@ -392,6 +431,23 @@ export default function ProfilesPage() {
                           : instance?.status === "error"
                             ? "error"
                             : "stopped";
+                      const cloudLabel =
+                        profile.cloudStatus?.state === "in-use"
+                          ? `in use · ${profile.cloudStatus.leaseMachine || "remote"}`
+                          : [
+                                "queued",
+                                "checking",
+                                "downloading",
+                                "extracting",
+                              ].includes(profile.cloudStatus?.state || "")
+                            ? `syncing · ${profile.cloudStatus?.state}`
+                            : profile.cloudStatus?.state === "sync-required"
+                              ? "sync required"
+                              : profile.cloudStatus?.state === "error"
+                                ? "cloud error"
+                                : profile.backend?.pinchtab?.cloud?.enabled
+                                  ? "cloud"
+                                  : "";
 
                       return (
                         <div
@@ -428,6 +484,11 @@ export default function ProfilesPage() {
                                   <div className="mt-1 text-xs text-text-muted">
                                     {accountText}
                                   </div>
+                                  {cloudLabel && (
+                                    <div className="mt-1 text-[11px] text-text-muted">
+                                      {cloudLabel}
+                                    </div>
+                                  )}
                                 </div>
                                 <Badge variant={statusVariant}>
                                   {statusLabel}
@@ -463,8 +524,12 @@ export default function ProfilesPage() {
                   onStop={() =>
                     selectedProfile && handleStop(selectedProfile.name)
                   }
+                  onSync={() =>
+                    selectedProfile && void handleSync(selectedProfile)
+                  }
                   onSave={handleSave}
                   onDelete={handleDelete}
+                  syncLoading={syncingProfileId === selectedProfile?.id}
                 />
               </div>
             </div>

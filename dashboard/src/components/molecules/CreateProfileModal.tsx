@@ -28,6 +28,15 @@ export default function CreateProfileModal({
   >("pinchtab");
   const [pinchTabProxyUrl, setPinchTabProxyUrl] = useState("");
   const [pinchTabTimezone, setPinchTabTimezone] = useState("");
+  const [pinchTabCloudEnabled, setPinchTabCloudEnabled] = useState(false);
+  const [pinchTabCloudBucket, setPinchTabCloudBucket] = useState(
+    "conthunt-dev-pinchtab-profiles",
+  );
+  const [pinchTabCloudPrefix, setPinchTabCloudPrefix] =
+    useState("pinchtab/profiles");
+  const [pinchTabCloudCredentialPath, setPinchTabCloudCredentialPath] =
+    useState("/Users/nirmal/Desktop/pinchtab/gcs-bucket-ops.json");
+  const [pinchTabKeepLocalCache, setPinchTabKeepLocalCache] = useState(true);
   const [steelProxyUrl, setSteelProxyUrl] = useState("");
   const [steelExtensionPaths, setSteelExtensionPaths] = useState<string[]>([]);
   const [cloakBaseUrl, setCloakBaseUrl] = useState("http://127.0.0.1:8080");
@@ -53,6 +62,13 @@ export default function CreateProfileModal({
     setBackendKind("pinchtab");
     setPinchTabProxyUrl("");
     setPinchTabTimezone("");
+    setPinchTabCloudEnabled(false);
+    setPinchTabCloudBucket("conthunt-dev-pinchtab-profiles");
+    setPinchTabCloudPrefix("pinchtab/profiles");
+    setPinchTabCloudCredentialPath(
+      "/Users/nirmal/Desktop/pinchtab/gcs-bucket-ops.json",
+    );
+    setPinchTabKeepLocalCache(true);
     setSteelProxyUrl("");
     setSteelExtensionPaths([]);
     setCloakBaseUrl("http://127.0.0.1:8080");
@@ -99,6 +115,17 @@ export default function CreateProfileModal({
               pinchtab: {
                 proxyUrl: pinchTabProxyUrl.trim() || undefined,
                 timezone: pinchTabTimezone.trim() || undefined,
+                cloud: pinchTabCloudEnabled
+                  ? {
+                      enabled: true,
+                      provider: "gcs",
+                      bucket: pinchTabCloudBucket.trim() || undefined,
+                      prefix: pinchTabCloudPrefix.trim() || undefined,
+                      credentialPath:
+                        pinchTabCloudCredentialPath.trim() || undefined,
+                      keepLocalCache: pinchTabKeepLocalCache,
+                    }
+                  : undefined,
               },
             }
           : {}),
@@ -204,6 +231,50 @@ export default function CreateProfileModal({
               value={pinchTabTimezone}
               onChange={(e) => setPinchTabTimezone(e.target.value)}
             />
+            <div className="rounded border border-border-subtle bg-black/10 p-3">
+              <label className="flex items-center gap-2 text-sm text-text-primary">
+                <input
+                  type="checkbox"
+                  checked={pinchTabCloudEnabled}
+                  onChange={(e) => setPinchTabCloudEnabled(e.target.checked)}
+                />
+                Enable GCS cloud sync for this profile
+              </label>
+              {pinchTabCloudEnabled && (
+                <div className="mt-3 flex flex-col gap-3">
+                  <Input
+                    label="Bucket"
+                    placeholder="conthunt-dev-pinchtab-profiles"
+                    value={pinchTabCloudBucket}
+                    onChange={(e) => setPinchTabCloudBucket(e.target.value)}
+                  />
+                  <Input
+                    label="Prefix"
+                    placeholder="pinchtab/profiles"
+                    value={pinchTabCloudPrefix}
+                    onChange={(e) => setPinchTabCloudPrefix(e.target.value)}
+                  />
+                  <Input
+                    label="Credential path"
+                    placeholder="/path/to/gcs-bucket-ops.json"
+                    value={pinchTabCloudCredentialPath}
+                    onChange={(e) =>
+                      setPinchTabCloudCredentialPath(e.target.value)
+                    }
+                  />
+                  <label className="flex items-center gap-2 text-sm text-text-primary">
+                    <input
+                      type="checkbox"
+                      checked={pinchTabKeepLocalCache}
+                      onChange={(e) =>
+                        setPinchTabKeepLocalCache(e.target.checked)
+                      }
+                    />
+                    Keep local cache after stop
+                  </label>
+                </div>
+              )}
+            </div>
           </>
         )}
         {backendKind === "steel" && (

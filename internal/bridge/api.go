@@ -90,12 +90,34 @@ type ProfileBackendCloak struct {
 }
 
 type ProfileBackendPinchTab struct {
-	ProxyURL       string   `json:"proxyUrl,omitempty"`
-	Timezone       string   `json:"timezone,omitempty"`
-	Locale         string   `json:"locale,omitempty"`
-	Binary         string   `json:"binary,omitempty"`
-	BrowserVersion string   `json:"browserVersion,omitempty"`
-	LaunchArgs     []string `json:"launchArgs,omitempty"`
+	ProxyURL       string              `json:"proxyUrl,omitempty"`
+	Timezone       string              `json:"timezone,omitempty"`
+	Locale         string              `json:"locale,omitempty"`
+	Binary         string              `json:"binary,omitempty"`
+	BrowserVersion string              `json:"browserVersion,omitempty"`
+	LaunchArgs     []string            `json:"launchArgs,omitempty"`
+	Cloud          *ProfileCloudConfig `json:"cloud,omitempty"`
+}
+
+type ProfileCloudConfig struct {
+	Enabled        *bool  `json:"enabled,omitempty"`
+	Provider       string `json:"provider,omitempty"`
+	Bucket         string `json:"bucket,omitempty"`
+	Prefix         string `json:"prefix,omitempty"`
+	ProfileID      string `json:"profileId,omitempty"`
+	CredentialPath string `json:"credentialPath,omitempty"`
+	KeepLocalCache *bool  `json:"keepLocalCache,omitempty"`
+}
+
+type ProfileCloudStatus struct {
+	State          string    `json:"state,omitempty"`
+	LeaseMachine   string    `json:"leaseMachine,omitempty"`
+	LeaseUser      string    `json:"leaseUser,omitempty"`
+	LeaseExpiresAt time.Time `json:"leaseExpiresAt,omitempty"`
+	RemoteVersion  string    `json:"remoteVersion,omitempty"`
+	LocalVersion   string    `json:"localVersion,omitempty"`
+	LastSyncAt     time.Time `json:"lastSyncAt,omitempty"`
+	Message        string    `json:"message,omitempty"`
 }
 
 type ProfileBackend struct {
@@ -136,23 +158,24 @@ type OrchestratorService interface {
 // Common types used across packages (migrated from main)
 
 type ProfileInfo struct {
-	ID                string          `json:"id,omitempty"`
-	Name              string          `json:"name"`
-	Path              string          `json:"path,omitempty"`       // File system path to profile directory
-	PathExists        bool            `json:"pathExists,omitempty"` // Whether the path exists on disk
-	Created           time.Time       `json:"created"`
-	LastUsed          time.Time       `json:"lastUsed"`
-	DiskUsage         int64           `json:"diskUsage"`
-	Running           bool            `json:"running"`
-	Temporary         bool            `json:"temporary,omitempty"` // ephemeral instance profiles (auto-generated)
-	Source            string          `json:"source,omitempty"`
-	ChromeProfileName string          `json:"chromeProfileName,omitempty"`
-	AccountEmail      string          `json:"accountEmail,omitempty"`
-	AccountName       string          `json:"accountName,omitempty"`
-	HasAccount        bool            `json:"hasAccount,omitempty"`
-	UseWhen           string          `json:"useWhen,omitempty"`
-	Description       string          `json:"description,omitempty"`
-	Backend           *ProfileBackend `json:"backend,omitempty"`
+	ID                string              `json:"id,omitempty"`
+	Name              string              `json:"name"`
+	Path              string              `json:"path,omitempty"`       // File system path to profile directory
+	PathExists        bool                `json:"pathExists,omitempty"` // Whether the path exists on disk
+	Created           time.Time           `json:"created"`
+	LastUsed          time.Time           `json:"lastUsed"`
+	DiskUsage         int64               `json:"diskUsage"`
+	Running           bool                `json:"running"`
+	Temporary         bool                `json:"temporary,omitempty"` // ephemeral instance profiles (auto-generated)
+	Source            string              `json:"source,omitempty"`
+	ChromeProfileName string              `json:"chromeProfileName,omitempty"`
+	AccountEmail      string              `json:"accountEmail,omitempty"`
+	AccountName       string              `json:"accountName,omitempty"`
+	HasAccount        bool                `json:"hasAccount,omitempty"`
+	UseWhen           string              `json:"useWhen,omitempty"`
+	Description       string              `json:"description,omitempty"`
+	Backend           *ProfileBackend     `json:"backend,omitempty"`
+	CloudStatus       *ProfileCloudStatus `json:"cloudStatus,omitempty"`
 }
 
 type ActionRecord struct {

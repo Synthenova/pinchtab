@@ -28,12 +28,36 @@ type ProfileBackendCloak struct {
 
 // ProfileBackendPinchTab mirrors the PinchTab-specific backend settings for a profile.
 type ProfileBackendPinchTab struct {
-	ProxyURL       string   `json:"proxyUrl,omitempty"`
-	Timezone       string   `json:"timezone,omitempty"`
-	Locale         string   `json:"locale,omitempty"`
-	Binary         string   `json:"binary,omitempty"`
-	BrowserVersion string   `json:"browserVersion,omitempty"`
-	LaunchArgs     []string `json:"launchArgs,omitempty"`
+	ProxyURL       string              `json:"proxyUrl,omitempty"`
+	Timezone       string              `json:"timezone,omitempty"`
+	Locale         string              `json:"locale,omitempty"`
+	Binary         string              `json:"binary,omitempty"`
+	BrowserVersion string              `json:"browserVersion,omitempty"`
+	LaunchArgs     []string            `json:"launchArgs,omitempty"`
+	Cloud          *ProfileCloudConfig `json:"cloud,omitempty"`
+}
+
+// ProfileCloudConfig mirrors cloud profile settings for PinchTab-backed profiles.
+type ProfileCloudConfig struct {
+	Enabled        *bool  `json:"enabled,omitempty"`
+	Provider       string `json:"provider,omitempty"`
+	Bucket         string `json:"bucket,omitempty"`
+	Prefix         string `json:"prefix,omitempty"`
+	ProfileID      string `json:"profileId,omitempty"`
+	CredentialPath string `json:"credentialPath,omitempty"`
+	KeepLocalCache *bool  `json:"keepLocalCache,omitempty"`
+}
+
+// ProfileCloudStatus surfaces current cloud sync / lease state in the dashboard.
+type ProfileCloudStatus struct {
+	State          string    `json:"state,omitempty"`
+	LeaseMachine   string    `json:"leaseMachine,omitempty"`
+	LeaseUser      string    `json:"leaseUser,omitempty"`
+	LeaseExpiresAt time.Time `json:"leaseExpiresAt,omitempty"`
+	RemoteVersion  string    `json:"remoteVersion,omitempty"`
+	LocalVersion   string    `json:"localVersion,omitempty"`
+	LastSyncAt     time.Time `json:"lastSyncAt,omitempty"`
+	Message        string    `json:"message,omitempty"`
 }
 
 // ProfileBackend describes which browser runtime backs a profile.
@@ -47,24 +71,25 @@ type ProfileBackend struct {
 // Profile represents a browser profile stored on disk.
 // Matches internal/bridge/api.go ProfileInfo
 type Profile struct {
-	ID                string          `json:"id,omitempty"`
-	Name              string          `json:"name"`
-	Path              string          `json:"path,omitempty"`
-	PathExists        bool            `json:"pathExists,omitempty"`
-	Created           time.Time       `json:"created"`
-	LastUsed          time.Time       `json:"lastUsed"`
-	DiskUsage         int64           `json:"diskUsage"`
-	SizeMB            float64         `json:"sizeMB,omitempty"`
-	Running           bool            `json:"running"`
-	Temporary         bool            `json:"temporary,omitempty"`
-	Source            string          `json:"source,omitempty"`
-	ChromeProfileName string          `json:"chromeProfileName,omitempty"`
-	AccountEmail      string          `json:"accountEmail,omitempty"`
-	AccountName       string          `json:"accountName,omitempty"`
-	HasAccount        bool            `json:"hasAccount,omitempty"`
-	UseWhen           string          `json:"useWhen,omitempty"`
-	Description       string          `json:"description,omitempty"`
-	Backend           *ProfileBackend `json:"backend,omitempty"`
+	ID                string              `json:"id,omitempty"`
+	Name              string              `json:"name"`
+	Path              string              `json:"path,omitempty"`
+	PathExists        bool                `json:"pathExists,omitempty"`
+	Created           time.Time           `json:"created"`
+	LastUsed          time.Time           `json:"lastUsed"`
+	DiskUsage         int64               `json:"diskUsage"`
+	SizeMB            float64             `json:"sizeMB,omitempty"`
+	Running           bool                `json:"running"`
+	Temporary         bool                `json:"temporary,omitempty"`
+	Source            string              `json:"source,omitempty"`
+	ChromeProfileName string              `json:"chromeProfileName,omitempty"`
+	AccountEmail      string              `json:"accountEmail,omitempty"`
+	AccountName       string              `json:"accountName,omitempty"`
+	HasAccount        bool                `json:"hasAccount,omitempty"`
+	UseWhen           string              `json:"useWhen,omitempty"`
+	Description       string              `json:"description,omitempty"`
+	Backend           *ProfileBackend     `json:"backend,omitempty"`
+	CloudStatus       *ProfileCloudStatus `json:"cloudStatus,omitempty"`
 }
 
 // Instance represents a running browser instance.

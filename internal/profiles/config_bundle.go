@@ -156,6 +156,15 @@ func appendBackendUpdateFields(updates map[string]string, backend *bridge.Profil
 		updates["backend.pinchtab.binary"] = backend.PinchTab.Binary
 		updates["backend.pinchtab.browserVersion"] = backend.PinchTab.BrowserVersion
 		updates["backend.pinchtab.launchArgs"] = encodeProfileStringList(backend.PinchTab.LaunchArgs)
+		if backend.PinchTab.Cloud != nil {
+			updates["backend.pinchtab.cloud.enabled"] = formatOptionalBool(backend.PinchTab.Cloud.Enabled)
+			updates["backend.pinchtab.cloud.provider"] = backend.PinchTab.Cloud.Provider
+			updates["backend.pinchtab.cloud.bucket"] = backend.PinchTab.Cloud.Bucket
+			updates["backend.pinchtab.cloud.prefix"] = backend.PinchTab.Cloud.Prefix
+			updates["backend.pinchtab.cloud.profileId"] = backend.PinchTab.Cloud.ProfileID
+			updates["backend.pinchtab.cloud.credentialPath"] = backend.PinchTab.Cloud.CredentialPath
+			updates["backend.pinchtab.cloud.keepLocalCache"] = formatOptionalBool(backend.PinchTab.Cloud.KeepLocalCache)
+		}
 	}
 	if backend.Cloak != nil {
 		updates["backend.cloak.baseUrl"] = backend.Cloak.BaseURL

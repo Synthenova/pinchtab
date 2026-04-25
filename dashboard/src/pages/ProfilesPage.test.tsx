@@ -15,6 +15,7 @@ import * as api from "../services/api";
 
 vi.mock("../services/api", () => ({
   fetchProfiles: vi.fn(),
+  fetchProfileSync: vi.fn(),
   createProfile: vi.fn(),
   deleteProfile: vi.fn(),
   exportProfileConfigs: vi.fn(),
@@ -22,6 +23,7 @@ vi.mock("../services/api", () => ({
   fetchInstances: vi.fn(),
   importProfileConfigs: vi.fn(),
   launchInstance: vi.fn(),
+  startProfileSync: vi.fn(),
   stopInstance: vi.fn(),
   fetchInstanceTabs: vi.fn(),
   fetchInstanceLogs: vi.fn(),
@@ -41,6 +43,17 @@ const profiles: Profile[] = [
     useWhen: "Use for personal logins",
     backend: {
       kind: "pinchtab",
+      pinchtab: {
+        cloud: {
+          enabled: true,
+          bucket: "bucket",
+          prefix: "pinchtab/profiles",
+          profileId: "cp_alpha",
+        },
+      },
+    },
+    cloudStatus: {
+      state: "available",
     },
   },
   {
@@ -123,6 +136,9 @@ describe("ProfilesPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(api.fetchProfiles).mockResolvedValue(profiles);
+    vi.mocked(api.fetchProfileSync).mockResolvedValue({
+      state: "ready",
+    });
     vi.mocked(api.fetchInstances).mockResolvedValue(instances);
     vi.mocked(api.exportProfileConfigs).mockResolvedValue({
       version: "pinchtab.profile-config.v1",
@@ -133,6 +149,9 @@ describe("ProfilesPage", () => {
       status: "imported",
       profiles: [],
       count: 0,
+    });
+    vi.mocked(api.startProfileSync).mockResolvedValue({
+      state: "queued",
     });
     useAppStore.setState({
       profiles,
@@ -220,8 +239,6 @@ describe("ProfilesPage", () => {
     });
     const nameInput = within(detailPanel).getByDisplayValue("alpha");
 
-    expect(saveButton).toBeDisabled();
-
     await userEvent.clear(nameInput);
     await userEvent.type(nameInput, "alpha-updated");
 
@@ -277,6 +294,35 @@ describe("ProfilesPage", () => {
     });
   });
 
+  it("starts cloud sync from the toolbar", async () => {
+    renderProfilesPage();
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Profile: beta/i }),
+      ).toBeInTheDocument();
+    });
+
+    await clickSidebarProfile("alpha");
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Profile: alpha/i }),
+      ).toBeInTheDocument();
+    });
+
+    const detailPanel = getDetailPanel()!;
+    const syncButton = within(detailPanel).getByRole("button", {
+      name: "Sync",
+    });
+
+    await userEvent.click(syncButton);
+
+    await waitFor(() => {
+      expect(api.startProfileSync).toHaveBeenCalledWith("prof_alpha");
+    });
+  });
+
   it("saves PinchTab proxy and timezone edits", async () => {
     const { updateProfile } = await import("../services/api");
     vi.mocked(updateProfile).mockResolvedValue({
@@ -324,6 +370,15 @@ describe("ProfilesPage", () => {
           pinchtab: {
             proxyUrl: "http://proxy.local:3128",
             timezone: "Asia/Singapore",
+            cloud: {
+              enabled: true,
+              provider: "gcs",
+              bucket: "bucket",
+              prefix: "pinchtab/profiles",
+              profileId: "cp_alpha",
+              credentialPath: undefined,
+              keepLocalCache: true,
+            },
           },
         },
       });

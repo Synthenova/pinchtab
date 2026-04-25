@@ -15,8 +15,10 @@ interface Props {
   instance?: Instance;
   onLaunch: () => void;
   onStop?: () => void;
+  onSync?: () => void;
   onSave?: (values: UpdateProfileRequest) => void;
   onDelete?: () => void;
+  syncLoading?: boolean;
 }
 
 type TabId = "profile" | "live" | "tabs" | "logs";
@@ -26,8 +28,10 @@ export default function ProfileDetailsPanel({
   instance,
   onLaunch,
   onStop,
+  onSync,
   onSave,
   onDelete,
+  syncLoading,
 }: Props) {
   const [activeTab, setActiveTab] = useState<TabId>("profile");
   const [tabs, setTabs] = useState<InstanceTab[]>([]);
@@ -102,6 +106,11 @@ export default function ProfileDetailsPanel({
     JSON.stringify(formValues.backend || null) !==
       JSON.stringify(profile.backend || null);
 
+  const launchBlockedByCloudLease =
+    profile.cloudStatus?.state === "in-use" &&
+    !instance &&
+    !!profile.cloudStatus?.leaseMachine;
+
   const profileTabs: { id: TabId; label: string; badge?: string | number }[] = [
     { id: "profile", label: `Profile: ${profile.name}` },
     { id: "live", label: "Live" },
@@ -122,9 +131,17 @@ export default function ProfileDetailsPanel({
               instance={instance}
               onLaunch={onLaunch}
               onStop={onStop || (() => {})}
+              onSync={onSync}
               onSave={handleSave}
               onDelete={onDelete || (() => {})}
               isSaveDisabled={!(formValues.name || "").trim() || !hasChanges}
+              isLaunchDisabled={launchBlockedByCloudLease}
+              launchDisabledReason={
+                launchBlockedByCloudLease
+                  ? `In use by ${profile.cloudStatus?.leaseUser || "another user"} on ${profile.cloudStatus?.leaseMachine}`
+                  : undefined
+              }
+              syncLoading={syncLoading}
             />
           }
         >

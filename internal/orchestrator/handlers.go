@@ -30,6 +30,10 @@ func (o *Orchestrator) registerHandlers(mux *http.ServeMux, skipLaunch bool) {
 	if !skipLaunch {
 		mux.HandleFunc("POST /profiles/{id}/start", o.handleStartByID)
 	}
+	mux.HandleFunc("GET /profiles/{id}/sync", o.handleGetProfileSync)
+	if !skipLaunch {
+		mux.HandleFunc("POST /profiles/{id}/sync", o.handleStartProfileSync)
+	}
 	mux.HandleFunc("POST /profiles/{id}/stop", o.handleStopByID)
 	mux.HandleFunc("GET /profiles/{id}/instance", o.handleProfileInstance)
 

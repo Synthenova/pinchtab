@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, Input, Modal } from "../atoms";
 import { useAppStore } from "../../stores/useAppStore";
 import * as api from "../../services/api";
@@ -17,11 +17,17 @@ export default function StartInstanceModal({ open, profile, onClose }: Props) {
   const [launchError, setLaunchError] = useState("");
   const [launchLoading, setLaunchLoading] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState("");
+  const [syncStatus, setSyncStatus] = useState<api.ProfileSyncStatus | null>(
+    null,
+  );
+  const [pendingLaunch, setPendingLaunch] = useState(false);
 
   useEffect(() => {
     if (open) {
       setLaunchError("");
       setCopyFeedback("");
+      setSyncStatus(null);
+      setPendingLaunch(false);
       return;
     }
 
@@ -30,6 +36,8 @@ export default function StartInstanceModal({ open, profile, onClose }: Props) {
     setLaunchError("");
     setLaunchLoading(false);
     setCopyFeedback("");
+    setSyncStatus(null);
+    setPendingLaunch(false);
   }, [open, profile?.id, profile?.name]);
 
   const launchCommand = useMemo(() => {
@@ -44,31 +52,91 @@ export default function StartInstanceModal({ open, profile, onClose }: Props) {
     return `curl -X POST http://localhost:9867/instances/start -H "Content-Type: application/json" -d '${JSON.stringify(payload)}'`;
   }, [headless, port, profile]);
 
-  const handleLaunch = async () => {
-    if (!profile || launchLoading) return;
+  const handleLaunch = useCallback(
+    async (retry = false) => {
+      if (!profile || launchLoading) return;
 
-    setLaunchError("");
-    setLaunchLoading(true);
+      if (!retry) {
+        setLaunchError("");
+        setSyncStatus(null);
+      }
+      setLaunchLoading(true);
 
-    try {
-      const payload: LaunchInstanceRequest = {
-        profileId: profile.id || profile.name,
-        port: port.trim() || undefined,
-        mode: headless ? undefined : "headed",
-      };
+      try {
+        const payload: LaunchInstanceRequest = {
+          profileId: profile.id || profile.name,
+          port: port.trim() || undefined,
+          mode: headless ? undefined : "headed",
+        };
 
-      await api.launchInstance(payload);
-      const updated = await api.fetchInstances();
-      setInstances(updated);
-      onClose();
-    } catch (e) {
-      console.error("Launch failed:", e);
-      const msg = e instanceof Error ? e.message : "Failed to launch instance";
-      setLaunchError(msg);
-    } finally {
-      setLaunchLoading(false);
+        await api.launchInstance(payload);
+        const updated = await api.fetchInstances();
+        setInstances(updated);
+        setPendingLaunch(false);
+        onClose();
+      } catch (e) {
+        console.error("Launch failed:", e);
+        if (api.isApiError(e) && e.code === "profile_sync_in_progress") {
+          const sync = (e.details?.sync ||
+            null) as api.ProfileSyncStatus | null;
+          setSyncStatus(sync);
+          setPendingLaunch(true);
+          setLaunchError("Syncing profile before launch...");
+          return;
+        }
+        const msg =
+          e instanceof Error ? e.message : "Failed to launch instance";
+        setPendingLaunch(false);
+        setLaunchError(msg);
+      } finally {
+        setLaunchLoading(false);
+      }
+    },
+    [headless, launchLoading, onClose, port, profile, setInstances],
+  );
+
+  useEffect(() => {
+    if (!open || !profile || !pendingLaunch) {
+      return;
     }
-  };
+
+    let cancelled = false;
+    let timer: number | undefined;
+
+    const poll = async () => {
+      try {
+        const status = await api.fetchProfileSync(profile.id || profile.name);
+        if (cancelled) return;
+        setSyncStatus(status);
+        if (status.state === "ready") {
+          setPendingLaunch(false);
+          void handleLaunch(true);
+          return;
+        }
+        if (status.state === "error") {
+          setPendingLaunch(false);
+          setLaunchError(status.error || "Profile sync failed");
+          return;
+        }
+      } catch (error) {
+        if (cancelled) return;
+        setPendingLaunch(false);
+        setLaunchError(
+          error instanceof Error ? error.message : "Failed to poll sync status",
+        );
+        return;
+      }
+      timer = window.setTimeout(poll, 1000);
+    };
+
+    void poll();
+    return () => {
+      cancelled = true;
+      if (timer) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [handleLaunch, open, pendingLaunch, profile]);
 
   const handleCopyCommand = async () => {
     try {
@@ -90,17 +158,17 @@ export default function StartInstanceModal({ open, profile, onClose }: Props) {
         <>
           <Button
             variant="secondary"
-            disabled={launchLoading}
+            disabled={launchLoading || pendingLaunch}
             onClick={onClose}
           >
             Cancel
           </Button>
           <Button
             variant="primary"
-            onClick={handleLaunch}
-            loading={launchLoading}
+            onClick={() => void handleLaunch()}
+            loading={launchLoading || pendingLaunch}
           >
-            Start
+            {pendingLaunch ? "Syncing…" : "Start"}
           </Button>
         </>
       }
@@ -111,6 +179,35 @@ export default function StartInstanceModal({ open, profile, onClose }: Props) {
             {launchError}
           </div>
         )}
+        {syncStatus &&
+          ["queued", "checking", "downloading", "extracting", "ready"].includes(
+            syncStatus.state || "",
+          ) && (
+            <div className="rounded border border-border-subtle bg-bg-elevated px-3 py-2 text-sm text-text-secondary">
+              <div className="font-medium text-text-primary">
+                Cloud sync: {syncStatus.state}
+              </div>
+              {typeof syncStatus.progress === "number" &&
+                syncStatus.progress > 0 && (
+                  <div className="mt-2 h-2 overflow-hidden rounded bg-bg-hover">
+                    <div
+                      className="h-full bg-accent-primary transition-all"
+                      style={{
+                        width: `${Math.max(4, Math.min(100, syncStatus.progress))}%`,
+                      }}
+                    />
+                  </div>
+                )}
+              <div className="mt-1 text-xs text-text-muted">
+                {typeof syncStatus.progress === "number"
+                  ? `${syncStatus.progress}%`
+                  : "Preparing local cloud cache"}
+                {syncStatus.bytesTotal
+                  ? ` · ${syncStatus.bytesDone || 0} / ${syncStatus.bytesTotal} bytes`
+                  : ""}
+              </div>
+            </div>
+          )}
         <Input
           label="Port"
           placeholder="Auto-select from configured range"

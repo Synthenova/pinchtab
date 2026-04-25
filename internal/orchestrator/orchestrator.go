@@ -22,6 +22,7 @@ import (
 	"github.com/pinchtab/pinchtab/internal/api/types"
 	"github.com/pinchtab/pinchtab/internal/bridge"
 	"github.com/pinchtab/pinchtab/internal/browserproxy"
+	"github.com/pinchtab/pinchtab/internal/cloudprofiles"
 	"github.com/pinchtab/pinchtab/internal/config"
 	"github.com/pinchtab/pinchtab/internal/ids"
 	"github.com/pinchtab/pinchtab/internal/instance"
@@ -97,6 +98,8 @@ type InstanceInternal struct {
 	cloakProfileID string
 	browserProxy   *browserproxy.Server
 	logBuf         *ringBuffer
+	profilePath    string
+	cloudSession   *cloudprofiles.Session
 }
 
 func NewOrchestrator(baseDir string) *Orchestrator {
@@ -430,14 +433,19 @@ func (o *Orchestrator) LaunchWithOptions(name, port string, headless bool, exten
 	pinchTabBrowserVersion := ""
 	var pinchTabLaunchArgs []string
 	backendKind := "pinchtab"
+	var cloudSession *cloudprofiles.Session
 	var browserProxy *browserproxy.Server
+	backend := o.profileBackend(name)
 	launchSucceeded := false
 	defer func() {
 		if !launchSucceeded && browserProxy != nil {
 			_ = browserProxy.Close()
 		}
+		if !launchSucceeded && cloudSession != nil {
+			_ = cloudprofiles.Release(context.Background(), cloudSession)
+		}
 	}()
-	if backend := o.profileBackend(name); backend != nil && backend.Kind == "cloak" {
+	if backend != nil && backend.Kind == "cloak" {
 		backendKind = "cloak"
 		cloakCfg := o.resolveCloakLaunchDefaults(name)
 		if cloakCfg == nil || strings.TrimSpace(cloakCfg.ProfileID) == "" {
@@ -503,6 +511,23 @@ func (o *Orchestrator) LaunchWithOptions(name, port string, headless bool, exten
 			browserProxy = proxyServer
 			pinchTabProxyURL = proxyServer.URL()
 		}
+		if backend != nil && backend.PinchTab != nil && cloudprofiles.Enabled(backend.PinchTab.Cloud) {
+			if session, _ := cloudprofiles.ConsumePreparedSession(profilePath, backend.PinchTab.Cloud); session != nil {
+				cloudSession = session
+			} else {
+				status, err := cloudprofiles.StartSync(context.Background(), name, profilePath, backend.PinchTab.Cloud)
+				if err != nil {
+					if browserProxy != nil {
+						_ = browserProxy.Close()
+					}
+					return nil, fmt.Errorf("start cloud sync: %w", err)
+				}
+				if browserProxy != nil {
+					_ = browserProxy.Close()
+				}
+				return nil, &cloudSyncRequiredError{ProfileName: name, Status: status}
+			}
+		}
 	}
 	if err := os.MkdirAll(filepath.Join(profilePath, "Default"), 0755); err != nil {
 		return nil, fmt.Errorf("create profile dir: %w", err)
@@ -554,6 +579,8 @@ func (o *Orchestrator) LaunchWithOptions(name, port string, headless bool, exten
 		cloakProfileID: cloakProfileID,
 		browserProxy:   browserProxy,
 		logBuf:         logBuf,
+		profilePath:    profilePath,
+		cloudSession:   cloudSession,
 	}
 
 	o.mu.Lock()
@@ -931,6 +958,12 @@ func (o *Orchestrator) markStopped(id string) {
 	portStr := inst.Port
 	steelCmd := inst.steelCmd
 	browserProxy := inst.browserProxy
+	profileName := inst.ProfileName
+	profilePath := inst.profilePath
+	if strings.TrimSpace(profilePath) == "" {
+		profilePath = filepath.Join(o.baseDir, profileName)
+	}
+	cloudSession := inst.cloudSession
 	if portInt, err := strconv.Atoi(portStr); err == nil {
 		o.portAllocator.ReleasePort(portInt)
 		slog.Debug("released port", "id", id, "port", portStr)
@@ -948,7 +981,6 @@ func (o *Orchestrator) markStopped(id string) {
 		slog.Debug("released chrome debug port", "id", id, "port", inst.cdpPort)
 	}
 
-	profileName := inst.ProfileName
 	delete(o.instances, id)
 	o.mu.Unlock()
 
@@ -964,15 +996,18 @@ func (o *Orchestrator) markStopped(id string) {
 	if browserProxy != nil {
 		_ = browserProxy.Close()
 	}
+	if cloudSession != nil && strings.TrimSpace(profilePath) != "" {
+		if err := cloudprofiles.Finalize(context.Background(), profilePath, cloudSession); err != nil {
+			slog.Warn("failed to finalize cloud profile", "profile", profileName, "err", err)
+		}
+	}
 
 	// Kill any orphaned Chrome processes using this profile's directory.
 	// Chrome spawns helpers (GPU, renderer) in their own process groups,
 	// so killing the bridge process group doesn't reach them.
-	profilePath := filepath.Join(o.baseDir, profileName)
 	bridge.CleanupOrphanedChromeProcesses(profilePath)
 
 	if strings.HasPrefix(profileName, "instance-") {
-		profilePath := filepath.Join(o.baseDir, profileName)
 		if err := os.RemoveAll(profilePath); err != nil {
 			slog.Warn("failed to delete temporary profile directory", "name", profileName, "err", err)
 		} else {

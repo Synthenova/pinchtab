@@ -43,12 +43,19 @@ type RequestMeta = {
 export class ApiError extends Error {
   status: number;
   code?: string;
+  details?: Record<string, unknown>;
 
-  constructor(message: string, status: number, code?: string) {
+  constructor(
+    message: string,
+    status: number,
+    code?: string,
+    details?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -56,14 +63,17 @@ export function isApiError(error: unknown): error is ApiError {
   return error instanceof ApiError;
 }
 
-async function parseError(
-  res: Response,
-): Promise<{ code?: string; error?: string }> {
+async function parseError(res: Response): Promise<{
+  code?: string;
+  error?: string;
+  details?: Record<string, unknown>;
+}> {
   return (await res
     .json()
     .catch(() => ({ code: "", error: res.statusText }))) as {
     code?: string;
     error?: string;
+    details?: Record<string, unknown>;
   };
 }
 
@@ -94,7 +104,12 @@ async function request<T>(
     if (res.status === 401) {
       handleUnauthorized(meta, err.code);
     }
-    throw new ApiError(err.error || "Request failed", res.status, err.code);
+    throw new ApiError(
+      err.error || "Request failed",
+      res.status,
+      err.code,
+      err.details,
+    );
   }
   return res.json();
 }
@@ -119,7 +134,12 @@ async function requestText(
     if (res.status === 401) {
       handleUnauthorized(meta, err.code);
     }
-    throw new ApiError(err.error || "Request failed", res.status, err.code);
+    throw new ApiError(
+      err.error || "Request failed",
+      res.status,
+      err.code,
+      err.details,
+    );
   }
   return res.text();
 }
@@ -144,7 +164,12 @@ async function requestBlob(
     if (res.status === 401) {
       handleUnauthorized(meta, err.code);
     }
-    throw new ApiError(err.error || "Request failed", res.status, err.code);
+    throw new ApiError(
+      err.error || "Request failed",
+      res.status,
+      err.code,
+      err.details,
+    );
   }
   return res.blob();
 }
@@ -161,6 +186,31 @@ function withDashboardSource(options?: RequestInit): RequestInit {
 // Profiles — endpoint is /profiles (no /api prefix)
 export async function fetchProfiles(): Promise<Profile[]> {
   return request<Profile[]>("/profiles");
+}
+
+export interface ProfileSyncStatus {
+  state?: string;
+  progress?: number;
+  bytesDone?: number;
+  bytesTotal?: number;
+  error?: string;
+  remoteVersion?: string;
+  localVersion?: string;
+  startedAt?: string;
+  updatedAt?: string;
+}
+
+export async function fetchProfileSync(id: string): Promise<ProfileSyncStatus> {
+  return request<ProfileSyncStatus>(`/profiles/${encodeURIComponent(id)}/sync`);
+}
+
+export async function startProfileSync(id: string): Promise<ProfileSyncStatus> {
+  return request<ProfileSyncStatus>(
+    `/profiles/${encodeURIComponent(id)}/sync`,
+    {
+      method: "POST",
+    },
+  );
 }
 
 export async function createProfile(

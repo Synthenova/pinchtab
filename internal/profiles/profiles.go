@@ -1,6 +1,7 @@
 package profiles
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -16,6 +17,7 @@ import (
 	"github.com/pinchtab/pinchtab/internal/activity"
 	"github.com/pinchtab/pinchtab/internal/bridge"
 	"github.com/pinchtab/pinchtab/internal/cloak"
+	"github.com/pinchtab/pinchtab/internal/cloudprofiles"
 	"github.com/pinchtab/pinchtab/internal/ids"
 )
 
@@ -107,19 +109,20 @@ type ProfileMeta struct {
 }
 
 type ProfileDetailedInfo struct {
-	ID                string                 `json:"id,omitempty"`
-	Name              string                 `json:"name"`
-	Path              string                 `json:"path"`
-	CreatedAt         time.Time              `json:"createdAt"`
-	SizeMB            float64                `json:"sizeMB"`
-	Source            string                 `json:"source,omitempty"`
-	ChromeProfileName string                 `json:"chromeProfileName,omitempty"`
-	AccountEmail      string                 `json:"accountEmail,omitempty"`
-	AccountName       string                 `json:"accountName,omitempty"`
-	HasAccount        bool                   `json:"hasAccount,omitempty"`
-	UseWhen           string                 `json:"useWhen,omitempty"`
-	Description       string                 `json:"description,omitempty"`
-	Backend           *bridge.ProfileBackend `json:"backend,omitempty"`
+	ID                string                     `json:"id,omitempty"`
+	Name              string                     `json:"name"`
+	Path              string                     `json:"path"`
+	CreatedAt         time.Time                  `json:"createdAt"`
+	SizeMB            float64                    `json:"sizeMB"`
+	Source            string                     `json:"source,omitempty"`
+	ChromeProfileName string                     `json:"chromeProfileName,omitempty"`
+	AccountEmail      string                     `json:"accountEmail,omitempty"`
+	AccountName       string                     `json:"accountName,omitempty"`
+	HasAccount        bool                       `json:"hasAccount,omitempty"`
+	UseWhen           string                     `json:"useWhen,omitempty"`
+	Description       string                     `json:"description,omitempty"`
+	Backend           *bridge.ProfileBackend     `json:"backend,omitempty"`
+	CloudStatus       *bridge.ProfileCloudStatus `json:"cloudStatus,omitempty"`
 }
 
 func NewProfileManager(baseDir string) *ProfileManager {
@@ -226,6 +229,7 @@ func (pm *ProfileManager) List() ([]bridge.ProfileInfo, error) {
 			UseWhen:           info.UseWhen,
 			Description:       info.Description,
 			Backend:           info.Backend,
+			CloudStatus:       info.CloudStatus,
 		})
 	}
 	sort.Slice(profiles, func(i, j int) bool { return profiles[i].Name < profiles[j].Name })
@@ -282,7 +286,22 @@ func (pm *ProfileManager) profileInfo(dirName string) (ProfileDetailedInfo, erro
 		UseWhen:           meta.UseWhen,
 		Description:       meta.Description,
 		Backend:           normalizeProfileBackend(meta.Backend),
+		CloudStatus:       readProfileCloudStatus(dir, normalizeProfileBackend(meta.Backend)),
 	}, nil
+}
+
+func readProfileCloudStatus(dir string, backend *bridge.ProfileBackend) *bridge.ProfileCloudStatus {
+	if backend == nil || backend.Kind != "pinchtab" || backend.PinchTab == nil || !cloudprofiles.Enabled(backend.PinchTab.Cloud) {
+		return nil
+	}
+	status, err := cloudprofiles.Status(context.Background(), dir, backend.PinchTab.Cloud)
+	if err != nil {
+		return &bridge.ProfileCloudStatus{
+			State:   "error",
+			Message: err.Error(),
+		}
+	}
+	return status
 }
 
 func normalizeProfileBackend(backend *bridge.ProfileBackend) *bridge.ProfileBackend {
@@ -328,7 +347,15 @@ func normalizeProfileBackend(backend *bridge.ProfileBackend) *bridge.ProfileBack
 		normalized.PinchTab.Binary = strings.TrimSpace(normalized.PinchTab.Binary)
 		normalized.PinchTab.BrowserVersion = strings.TrimSpace(normalized.PinchTab.BrowserVersion)
 		normalized.PinchTab.LaunchArgs = normalizeStringList(normalized.PinchTab.LaunchArgs)
-		if normalized.PinchTab.ProxyURL == "" && normalized.PinchTab.Timezone == "" && normalized.PinchTab.Locale == "" && normalized.PinchTab.Binary == "" && normalized.PinchTab.BrowserVersion == "" && len(normalized.PinchTab.LaunchArgs) == 0 {
+		if normalized.PinchTab.Cloud != nil {
+			cloudprofiles.EnsureProfileID(normalized.PinchTab.Cloud)
+			normalized.PinchTab.Cloud.Provider = strings.TrimSpace(normalized.PinchTab.Cloud.Provider)
+			normalized.PinchTab.Cloud.Bucket = strings.TrimSpace(normalized.PinchTab.Cloud.Bucket)
+			normalized.PinchTab.Cloud.Prefix = strings.TrimSpace(normalized.PinchTab.Cloud.Prefix)
+			normalized.PinchTab.Cloud.ProfileID = strings.TrimSpace(normalized.PinchTab.Cloud.ProfileID)
+			normalized.PinchTab.Cloud.CredentialPath = strings.TrimSpace(normalized.PinchTab.Cloud.CredentialPath)
+		}
+		if normalized.PinchTab.ProxyURL == "" && normalized.PinchTab.Timezone == "" && normalized.PinchTab.Locale == "" && normalized.PinchTab.Binary == "" && normalized.PinchTab.BrowserVersion == "" && len(normalized.PinchTab.LaunchArgs) == 0 && normalized.PinchTab.Cloud == nil {
 			normalized.PinchTab = nil
 		}
 		normalized.Steel = nil
@@ -826,6 +853,111 @@ func (pm *ProfileManager) UpdateMeta(name string, meta map[string]string) error 
 			existing.Backend.PinchTab = &bridge.ProfileBackendPinchTab{}
 		}
 		existing.Backend.PinchTab.LaunchArgs = normalizeStringList(strings.Split(backendLaunchArgs, ","))
+		if existing.Backend.Kind == "" {
+			existing.Backend.Kind = "pinchtab"
+		}
+	}
+	if cloudEnabled, ok := meta["backend.pinchtab.cloud.enabled"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		if existing.Backend.PinchTab == nil {
+			existing.Backend.PinchTab = &bridge.ProfileBackendPinchTab{}
+		}
+		if existing.Backend.PinchTab.Cloud == nil {
+			existing.Backend.PinchTab.Cloud = &bridge.ProfileCloudConfig{}
+		}
+		existing.Backend.PinchTab.Cloud.Enabled = parseOptionalBool(cloudEnabled)
+		if existing.Backend.Kind == "" {
+			existing.Backend.Kind = "pinchtab"
+		}
+	}
+	if cloudProvider, ok := meta["backend.pinchtab.cloud.provider"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		if existing.Backend.PinchTab == nil {
+			existing.Backend.PinchTab = &bridge.ProfileBackendPinchTab{}
+		}
+		if existing.Backend.PinchTab.Cloud == nil {
+			existing.Backend.PinchTab.Cloud = &bridge.ProfileCloudConfig{}
+		}
+		existing.Backend.PinchTab.Cloud.Provider = cloudProvider
+		if existing.Backend.Kind == "" {
+			existing.Backend.Kind = "pinchtab"
+		}
+	}
+	if cloudBucket, ok := meta["backend.pinchtab.cloud.bucket"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		if existing.Backend.PinchTab == nil {
+			existing.Backend.PinchTab = &bridge.ProfileBackendPinchTab{}
+		}
+		if existing.Backend.PinchTab.Cloud == nil {
+			existing.Backend.PinchTab.Cloud = &bridge.ProfileCloudConfig{}
+		}
+		existing.Backend.PinchTab.Cloud.Bucket = cloudBucket
+		if existing.Backend.Kind == "" {
+			existing.Backend.Kind = "pinchtab"
+		}
+	}
+	if cloudPrefix, ok := meta["backend.pinchtab.cloud.prefix"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		if existing.Backend.PinchTab == nil {
+			existing.Backend.PinchTab = &bridge.ProfileBackendPinchTab{}
+		}
+		if existing.Backend.PinchTab.Cloud == nil {
+			existing.Backend.PinchTab.Cloud = &bridge.ProfileCloudConfig{}
+		}
+		existing.Backend.PinchTab.Cloud.Prefix = cloudPrefix
+		if existing.Backend.Kind == "" {
+			existing.Backend.Kind = "pinchtab"
+		}
+	}
+	if cloudProfileID, ok := meta["backend.pinchtab.cloud.profileId"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		if existing.Backend.PinchTab == nil {
+			existing.Backend.PinchTab = &bridge.ProfileBackendPinchTab{}
+		}
+		if existing.Backend.PinchTab.Cloud == nil {
+			existing.Backend.PinchTab.Cloud = &bridge.ProfileCloudConfig{}
+		}
+		existing.Backend.PinchTab.Cloud.ProfileID = cloudProfileID
+		if existing.Backend.Kind == "" {
+			existing.Backend.Kind = "pinchtab"
+		}
+	}
+	if credentialPath, ok := meta["backend.pinchtab.cloud.credentialPath"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		if existing.Backend.PinchTab == nil {
+			existing.Backend.PinchTab = &bridge.ProfileBackendPinchTab{}
+		}
+		if existing.Backend.PinchTab.Cloud == nil {
+			existing.Backend.PinchTab.Cloud = &bridge.ProfileCloudConfig{}
+		}
+		existing.Backend.PinchTab.Cloud.CredentialPath = credentialPath
+		if existing.Backend.Kind == "" {
+			existing.Backend.Kind = "pinchtab"
+		}
+	}
+	if keepLocalCache, ok := meta["backend.pinchtab.cloud.keepLocalCache"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		if existing.Backend.PinchTab == nil {
+			existing.Backend.PinchTab = &bridge.ProfileBackendPinchTab{}
+		}
+		if existing.Backend.PinchTab.Cloud == nil {
+			existing.Backend.PinchTab.Cloud = &bridge.ProfileCloudConfig{}
+		}
+		existing.Backend.PinchTab.Cloud.KeepLocalCache = parseOptionalBool(keepLocalCache)
 		if existing.Backend.Kind == "" {
 			existing.Backend.Kind = "pinchtab"
 		}

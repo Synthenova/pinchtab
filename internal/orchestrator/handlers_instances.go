@@ -138,6 +138,9 @@ func (o *Orchestrator) handleStartByInstanceID(w http.ResponseWriter, r *http.Re
 	proxyURL, extensionPaths := o.resolveSteelLaunchDefaults(profileName, "", nil)
 	started, err := o.LaunchWithOptions(profileName, port, headless, extensionPaths, proxyURL)
 	if err != nil {
+		if writeLaunchError(w, err) {
+			return
+		}
 		statusCode := classifyLaunchError(err)
 		httpx.Error(w, statusCode, err)
 		return
@@ -256,6 +259,9 @@ func (o *Orchestrator) startInstanceWithRequest(w http.ResponseWriter, r *http.R
 	proxyURL, extensionPaths := o.resolveSteelLaunchDefaults(profileName, req.ProxyURL, req.ExtensionPaths)
 	inst, err := o.LaunchWithOptions(profileName, req.Port, headless, extensionPaths, proxyURL)
 	if err != nil {
+		if writeLaunchError(w, err) {
+			return
+		}
 		statusCode := classifyLaunchError(err)
 		httpx.Error(w, statusCode, err)
 		return

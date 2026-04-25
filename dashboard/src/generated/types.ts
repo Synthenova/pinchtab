@@ -41,6 +41,32 @@ export interface ProfileBackendPinchTab {
   binary?: string;
   browserVersion?: string;
   launchArgs?: string[];
+  cloud?: ProfileCloudConfig;
+}
+/**
+ * ProfileCloudConfig mirrors cloud profile settings for PinchTab-backed profiles.
+ */
+export interface ProfileCloudConfig {
+  enabled?: boolean;
+  provider?: string;
+  bucket?: string;
+  prefix?: string;
+  profileId?: string;
+  credentialPath?: string;
+  keepLocalCache?: boolean;
+}
+/**
+ * ProfileCloudStatus surfaces current cloud sync / lease state in the dashboard.
+ */
+export interface ProfileCloudStatus {
+  state?: string;
+  leaseMachine?: string;
+  leaseUser?: string;
+  leaseExpiresAt?: string;
+  remoteVersion?: string;
+  localVersion?: string;
+  lastSyncAt?: string;
+  message?: string;
 }
 /**
  * ProfileBackend describes which browser runtime backs a profile.
@@ -74,6 +100,7 @@ export interface Profile {
   useWhen?: string;
   description?: string;
   backend?: ProfileBackend;
+  cloudStatus?: ProfileCloudStatus;
 }
 /**
  * Instance represents a running browser instance.

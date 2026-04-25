@@ -82,6 +82,87 @@ export default function ProfileMetaInfoPanel({ profile, instance }: Props) {
               </code>
             </div>
           )}
+        {profile.backend?.kind === "pinchtab" &&
+          profile.backend?.pinchtab?.cloud && (
+            <>
+              <div className="flex items-center justify-between gap-3">
+                <span className="dashboard-section-title text-[0.68rem]">
+                  Cloud Sync
+                </span>
+                <span className="text-right">
+                  {profile.cloudStatus?.state || "enabled"}
+                </span>
+              </div>
+              {profile.backend.pinchtab.cloud.profileId && (
+                <div>
+                  <div className="dashboard-section-title mb-1 text-[0.68rem]">
+                    Cloud Profile ID
+                  </div>
+                  <code className="dashboard-mono block break-all text-xs text-text-secondary">
+                    {profile.backend.pinchtab.cloud.profileId}
+                  </code>
+                </div>
+              )}
+              {profile.backend.pinchtab.cloud.bucket && (
+                <div>
+                  <div className="dashboard-section-title mb-1 text-[0.68rem]">
+                    Cloud Bucket
+                  </div>
+                  <code className="dashboard-mono block break-all text-xs text-text-secondary">
+                    {profile.backend.pinchtab.cloud.bucket}
+                    {profile.backend.pinchtab.cloud.prefix
+                      ? `/${profile.backend.pinchtab.cloud.prefix}`
+                      : ""}
+                  </code>
+                </div>
+              )}
+              {profile.cloudStatus?.leaseMachine && (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="dashboard-section-title text-[0.68rem]">
+                    Lease Holder
+                  </span>
+                  <span className="text-right">
+                    {profile.cloudStatus.leaseUser
+                      ? `${profile.cloudStatus.leaseUser} @ ${profile.cloudStatus.leaseMachine}`
+                      : profile.cloudStatus.leaseMachine}
+                  </span>
+                </div>
+              )}
+              {profile.cloudStatus?.remoteVersion && (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="dashboard-section-title text-[0.68rem]">
+                    Remote Version
+                  </span>
+                  <span className="text-right">
+                    {profile.cloudStatus.remoteVersion}
+                  </span>
+                </div>
+              )}
+              {profile.cloudStatus?.localVersion && (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="dashboard-section-title text-[0.68rem]">
+                    Local Version
+                  </span>
+                  <span className="text-right">
+                    {profile.cloudStatus.localVersion}
+                  </span>
+                </div>
+              )}
+              {profile.cloudStatus?.message && (
+                <div className="text-xs text-destructive">
+                  {profile.cloudStatus.message}
+                </div>
+              )}
+              {["queued", "checking", "downloading", "extracting"].includes(
+                profile.cloudStatus?.state || "",
+              ) && (
+                <div className="text-xs text-text-muted">
+                  Sync is currently in progress. You can keep this panel open
+                  and use the Sync button to refresh state through the API.
+                </div>
+              )}
+            </>
+          )}
         {profile.backend?.kind === "steel" &&
           profile.backend.steel?.proxyUrl && (
             <div>
