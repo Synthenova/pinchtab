@@ -53,12 +53,12 @@ func (h *Handlers) HandleOpenAPI(w http.ResponseWriter, _ *http.Request) {
 				"x-pinchtab-enabled": security["download"].Enabled,
 			}},
 			"/upload": map[string]any{"post": map[string]any{
-				"summary":            "Set files on a file input",
+				"summary":            "Set files on a file input via JSON or multipart upload",
 				"description":        security["upload"].Message,
 				"x-pinchtab-enabled": security["upload"].Enabled,
 			}},
 			"/tabs/{id}/upload": map[string]any{"post": map[string]any{
-				"summary":            "Set files on a file input in a specific tab",
+				"summary":            "Set files on a file input in a specific tab via JSON or multipart upload",
 				"description":        security["upload"].Message,
 				"x-pinchtab-enabled": security["upload"].Enabled,
 			}},

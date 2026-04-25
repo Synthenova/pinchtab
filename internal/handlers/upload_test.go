@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -236,6 +237,80 @@ func TestHandleUpload_BodyTooLarge(t *testing.T) {
 	h.HandleUpload(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for oversized body, got %d", w.Code)
+	}
+}
+
+func TestHandleUpload_MultipartEmpty(t *testing.T) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("selector", "input[type=file]"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	h := New(&mockBridge{}, &config.RuntimeConfig{AllowUpload: true}, nil, nil, nil)
+	req := httptest.NewRequest("POST", "/upload", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	h.HandleUpload(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for empty multipart upload, got %d", w.Code)
+	}
+}
+
+func TestHandleUpload_MultipartAccepted(t *testing.T) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("selector", "#resume-upload"); err != nil {
+		t.Fatal(err)
+	}
+	part, err := writer.CreateFormFile("file", "resume.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write([]byte("hello")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	h := New(&mockBridge{failTab: true}, &config.RuntimeConfig{AllowUpload: true}, nil, nil, nil)
+	req := httptest.NewRequest("POST", "/upload", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	h.HandleUpload(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected multipart parsing to pass and tab lookup to fail, got %d", w.Code)
+	}
+}
+
+func TestHandleUpload_MultipartRejectsTooLarge(t *testing.T) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "oversized.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write([]byte("hello")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	h := New(&mockBridge{}, &config.RuntimeConfig{
+		AllowUpload:        true,
+		UploadMaxFileBytes: 4,
+	}, nil, nil, nil)
+	req := httptest.NewRequest("POST", "/upload", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	h.HandleUpload(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for oversized multipart file, got %d", w.Code)
 	}
 }
 
