@@ -25,6 +25,7 @@ export interface ProfileBackendCloak {
   locale?: string;
   platform?: string;
   userAgent?: string;
+  launchArgs?: string[];
   headless?: boolean;
   humanize?: boolean;
   geoip?: boolean;

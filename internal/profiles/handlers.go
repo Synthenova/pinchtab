@@ -1,7 +1,9 @@
 package profiles
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,6 +15,123 @@ import (
 
 func encodeProfileStringList(items []string) string {
 	return strings.Join(normalizeStringList(items), ",")
+}
+
+func decodeProfileRequest(r *http.Request, v any) (map[string]json.RawMessage, error) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(body, v); err != nil {
+		return nil, err
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+
+func jsonObjectField(raw map[string]json.RawMessage, key string) map[string]json.RawMessage {
+	if raw == nil {
+		return nil
+	}
+	value, ok := raw[key]
+	if !ok {
+		return nil
+	}
+	var out map[string]json.RawMessage
+	if err := json.Unmarshal(value, &out); err != nil {
+		return nil
+	}
+	return out
+}
+
+func hasJSONField(raw map[string]json.RawMessage, key string) bool {
+	if raw == nil {
+		return false
+	}
+	_, ok := raw[key]
+	return ok
+}
+
+func appendBackendUpdates(updates map[string]string, backend *bridge.ProfileBackend, raw map[string]json.RawMessage) {
+	if backend == nil {
+		return
+	}
+	backendRaw := jsonObjectField(raw, "backend")
+	if hasJSONField(backendRaw, "kind") {
+		updates["backend.kind"] = backend.Kind
+	}
+	if backend.Cloak != nil {
+		cloakRaw := jsonObjectField(backendRaw, "cloak")
+		if hasJSONField(cloakRaw, "baseUrl") {
+			updates["backend.cloak.baseUrl"] = backend.Cloak.BaseURL
+		}
+		if hasJSONField(cloakRaw, "profileId") && strings.TrimSpace(backend.Cloak.ProfileID) != "" {
+			updates["backend.cloak.profileId"] = backend.Cloak.ProfileID
+		}
+		if hasJSONField(cloakRaw, "proxyUrl") {
+			updates["backend.cloak.proxyUrl"] = backend.Cloak.ProxyURL
+		}
+		if hasJSONField(cloakRaw, "timezone") {
+			updates["backend.cloak.timezone"] = backend.Cloak.Timezone
+		}
+		if hasJSONField(cloakRaw, "locale") {
+			updates["backend.cloak.locale"] = backend.Cloak.Locale
+		}
+		if hasJSONField(cloakRaw, "platform") {
+			updates["backend.cloak.platform"] = backend.Cloak.Platform
+		}
+		if hasJSONField(cloakRaw, "userAgent") {
+			updates["backend.cloak.userAgent"] = backend.Cloak.UserAgent
+		}
+		if hasJSONField(cloakRaw, "launchArgs") {
+			updates["backend.cloak.launchArgs"] = encodeProfileStringList(backend.Cloak.LaunchArgs)
+		}
+		if hasJSONField(cloakRaw, "notes") {
+			updates["backend.cloak.notes"] = backend.Cloak.Notes
+		}
+		if hasJSONField(cloakRaw, "headless") {
+			updates["backend.cloak.headless"] = formatOptionalBool(backend.Cloak.Headless)
+		}
+		if hasJSONField(cloakRaw, "humanize") {
+			updates["backend.cloak.humanize"] = formatOptionalBool(backend.Cloak.Humanize)
+		}
+		if hasJSONField(cloakRaw, "geoip") {
+			updates["backend.cloak.geoip"] = formatOptionalBool(backend.Cloak.GeoIP)
+		}
+	}
+	if backend.Steel != nil {
+		steelRaw := jsonObjectField(backendRaw, "steel")
+		if hasJSONField(steelRaw, "proxyUrl") {
+			updates["backend.steel.proxyUrl"] = backend.Steel.ProxyURL
+		}
+		if hasJSONField(steelRaw, "extensionPaths") {
+			updates["backend.steel.extensionPaths"] = encodeProfileStringList(backend.Steel.ExtensionPaths)
+		}
+	}
+	if backend.PinchTab != nil {
+		pinchTabRaw := jsonObjectField(backendRaw, "pinchtab")
+		if hasJSONField(pinchTabRaw, "proxyUrl") {
+			updates["backend.pinchtab.proxyUrl"] = backend.PinchTab.ProxyURL
+		}
+		if hasJSONField(pinchTabRaw, "timezone") {
+			updates["backend.pinchtab.timezone"] = backend.PinchTab.Timezone
+		}
+		if hasJSONField(pinchTabRaw, "locale") {
+			updates["backend.pinchtab.locale"] = backend.PinchTab.Locale
+		}
+		if hasJSONField(pinchTabRaw, "binary") {
+			updates["backend.pinchtab.binary"] = backend.PinchTab.Binary
+		}
+		if hasJSONField(pinchTabRaw, "browserVersion") {
+			updates["backend.pinchtab.browserVersion"] = backend.PinchTab.BrowserVersion
+		}
+		if hasJSONField(pinchTabRaw, "launchArgs") {
+			updates["backend.pinchtab.launchArgs"] = encodeProfileStringList(backend.PinchTab.LaunchArgs)
+		}
+	}
 }
 
 func profileMutationStatus(err error) int {
@@ -158,7 +277,8 @@ func (pm *ProfileManager) handleUpdateMeta(w http.ResponseWriter, r *http.Reques
 		UseWhen     *string                `json:"useWhen"`
 		Backend     *bridge.ProfileBackend `json:"backend"`
 	}
-	if err := httpx.DecodeJSONBody(w, r, 0, &req); err != nil {
+	raw, err := decodeProfileRequest(r, &req)
+	if err != nil {
 		httpx.Error(w, httpx.StatusForJSONDecodeError(err), err)
 		return
 	}
@@ -174,37 +294,7 @@ func (pm *ProfileManager) handleUpdateMeta(w http.ResponseWriter, r *http.Reques
 	if req.UseWhen != nil {
 		updates["useWhen"] = *req.UseWhen
 	}
-	if req.Backend != nil {
-		if req.Backend.Cloak != nil {
-			updates["backend.cloak.baseUrl"] = req.Backend.Cloak.BaseURL
-			if strings.TrimSpace(req.Backend.Cloak.ProfileID) != "" {
-				updates["backend.cloak.profileId"] = req.Backend.Cloak.ProfileID
-			}
-			updates["backend.cloak.proxyUrl"] = req.Backend.Cloak.ProxyURL
-			updates["backend.cloak.timezone"] = req.Backend.Cloak.Timezone
-			updates["backend.cloak.locale"] = req.Backend.Cloak.Locale
-			updates["backend.cloak.platform"] = req.Backend.Cloak.Platform
-			updates["backend.cloak.userAgent"] = req.Backend.Cloak.UserAgent
-			updates["backend.cloak.launchArgs"] = encodeProfileStringList(req.Backend.Cloak.LaunchArgs)
-			updates["backend.cloak.notes"] = req.Backend.Cloak.Notes
-			updates["backend.cloak.headless"] = formatOptionalBool(req.Backend.Cloak.Headless)
-			updates["backend.cloak.humanize"] = formatOptionalBool(req.Backend.Cloak.Humanize)
-			updates["backend.cloak.geoip"] = formatOptionalBool(req.Backend.Cloak.GeoIP)
-		}
-		updates["backend.kind"] = req.Backend.Kind
-		if req.Backend.Steel != nil {
-			updates["backend.steel.proxyUrl"] = req.Backend.Steel.ProxyURL
-			updates["backend.steel.extensionPaths"] = encodeProfileStringList(req.Backend.Steel.ExtensionPaths)
-		}
-		if req.Backend.PinchTab != nil {
-			updates["backend.pinchtab.proxyUrl"] = req.Backend.PinchTab.ProxyURL
-			updates["backend.pinchtab.timezone"] = req.Backend.PinchTab.Timezone
-			updates["backend.pinchtab.locale"] = req.Backend.PinchTab.Locale
-			updates["backend.pinchtab.binary"] = req.Backend.PinchTab.Binary
-			updates["backend.pinchtab.browserVersion"] = req.Backend.PinchTab.BrowserVersion
-			updates["backend.pinchtab.launchArgs"] = encodeProfileStringList(req.Backend.PinchTab.LaunchArgs)
-		}
-	}
+	appendBackendUpdates(updates, req.Backend, raw)
 
 	if err := pm.UpdateMeta(req.Name, updates); err != nil {
 		httpx.Error(w, profileMutationStatus(err), err)
@@ -308,7 +398,8 @@ func (pm *ProfileManager) handleUpdateByID(w http.ResponseWriter, r *http.Reques
 		Description *string                `json:"description"`
 		Backend     *bridge.ProfileBackend `json:"backend"`
 	}
-	if err := httpx.DecodeJSONBody(w, r, 0, &req); err != nil {
+	raw, err := decodeProfileRequest(r, &req)
+	if err != nil {
 		httpx.Error(w, httpx.StatusForJSONDecodeError(err), fmt.Errorf("invalid JSON"))
 		return
 	}
@@ -330,37 +421,7 @@ func (pm *ProfileManager) handleUpdateByID(w http.ResponseWriter, r *http.Reques
 	if req.UseWhen != nil {
 		updates["useWhen"] = *req.UseWhen
 	}
-	if req.Backend != nil {
-		updates["backend.kind"] = req.Backend.Kind
-		if req.Backend.Cloak != nil {
-			updates["backend.cloak.baseUrl"] = req.Backend.Cloak.BaseURL
-			if strings.TrimSpace(req.Backend.Cloak.ProfileID) != "" {
-				updates["backend.cloak.profileId"] = req.Backend.Cloak.ProfileID
-			}
-			updates["backend.cloak.proxyUrl"] = req.Backend.Cloak.ProxyURL
-			updates["backend.cloak.timezone"] = req.Backend.Cloak.Timezone
-			updates["backend.cloak.locale"] = req.Backend.Cloak.Locale
-			updates["backend.cloak.platform"] = req.Backend.Cloak.Platform
-			updates["backend.cloak.userAgent"] = req.Backend.Cloak.UserAgent
-			updates["backend.cloak.launchArgs"] = encodeProfileStringList(req.Backend.Cloak.LaunchArgs)
-			updates["backend.cloak.notes"] = req.Backend.Cloak.Notes
-			updates["backend.cloak.headless"] = formatOptionalBool(req.Backend.Cloak.Headless)
-			updates["backend.cloak.humanize"] = formatOptionalBool(req.Backend.Cloak.Humanize)
-			updates["backend.cloak.geoip"] = formatOptionalBool(req.Backend.Cloak.GeoIP)
-		}
-		if req.Backend.Steel != nil {
-			updates["backend.steel.proxyUrl"] = req.Backend.Steel.ProxyURL
-			updates["backend.steel.extensionPaths"] = encodeProfileStringList(req.Backend.Steel.ExtensionPaths)
-		}
-		if req.Backend.PinchTab != nil {
-			updates["backend.pinchtab.proxyUrl"] = req.Backend.PinchTab.ProxyURL
-			updates["backend.pinchtab.timezone"] = req.Backend.PinchTab.Timezone
-			updates["backend.pinchtab.locale"] = req.Backend.PinchTab.Locale
-			updates["backend.pinchtab.binary"] = req.Backend.PinchTab.Binary
-			updates["backend.pinchtab.browserVersion"] = req.Backend.PinchTab.BrowserVersion
-			updates["backend.pinchtab.launchArgs"] = encodeProfileStringList(req.Backend.PinchTab.LaunchArgs)
-		}
-	}
+	appendBackendUpdates(updates, req.Backend, raw)
 	if len(updates) > 0 {
 		if err := pm.UpdateMeta(finalName, updates); err != nil {
 			httpx.Error(w, profileMutationStatus(err), err)

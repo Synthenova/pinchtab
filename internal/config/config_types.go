@@ -52,6 +52,8 @@ type RuntimeConfig struct {
 	ChromeBinary         string
 	ChromeDebugPort      int
 	ExternalBrowserWSURL string
+	CloakBaseURL         string
+	CloakProfileID       string
 	ChromeExtraFlags     string
 	ProxyURL             string
 	ExtensionPaths       []string
@@ -239,6 +241,8 @@ type BrowserConfig struct {
 	ChromeBinary         string   `json:"binary,omitempty"`
 	ChromeDebugPort      *int     `json:"remoteDebuggingPort,omitempty"`
 	ExternalBrowserWSURL string   `json:"externalBrowserWsUrl,omitempty"`
+	CloakBaseURL         string   `json:"cloakBaseUrl,omitempty"`
+	CloakProfileID       string   `json:"cloakProfileId,omitempty"`
 	ChromeExtraFlags     string   `json:"extraFlags,omitempty"`
 	ProxyURL             string   `json:"proxyUrl,omitempty"`
 	ExtensionPaths       []string `json:"extensionPaths,omitempty"`

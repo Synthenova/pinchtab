@@ -1,10 +1,17 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import ProfilesPage from "./ProfilesPage";
 import { useAppStore } from "../stores/useAppStore";
 import type { Instance, Profile } from "../generated/types";
+import * as api from "../services/api";
 
 vi.mock("../services/api", () => ({
   fetchProfiles: vi.fn(),
@@ -51,6 +58,28 @@ const profiles: Profile[] = [
       },
     },
   },
+  {
+    id: "prof_gamma",
+    name: "gamma",
+    created: "2026-03-03T10:00:00Z",
+    lastUsed: "2026-03-07T10:00:00Z",
+    diskUsage: 4096,
+    sizeMB: 18,
+    running: false,
+    backend: {
+      kind: "cloak",
+      cloak: {
+        baseUrl: "http://127.0.0.1:8080",
+        profileId: "cloak-prof-gamma",
+        proxyUrl: "http://proxy.old:8080",
+        timezone: "UTC",
+        launchArgs: ["--old-arg"],
+        headless: false,
+        humanize: false,
+        geoip: false,
+      },
+    },
+  },
 ];
 
 const instances: Instance[] = [
@@ -91,6 +120,8 @@ function getDetailPanel() {
 describe("ProfilesPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(api.fetchProfiles).mockResolvedValue(profiles);
+    vi.mocked(api.fetchInstances).mockResolvedValue(instances);
     useAppStore.setState({
       profiles,
       profilesLoading: false,
@@ -211,14 +242,15 @@ describe("ProfilesPage", () => {
 
     await userEvent.clear(proxyInput);
     await userEvent.type(proxyInput, "http://proxy2.local:9090");
-    await userEvent.clear(extensionsInput);
-    await userEvent.type(extensionsInput, "/tmp/ext-two, /tmp/ext-three");
+    fireEvent.change(extensionsInput, {
+      target: { value: "/tmp/ext-two, /tmp/ext-three" },
+    });
     await userEvent.click(saveButton);
 
     await waitFor(() => {
       expect(updateProfile).toHaveBeenCalledWith("prof_beta", {
         name: undefined,
-        useWhen: undefined,
+        useWhen: "",
         backend: {
           kind: "steel",
           steel: {
@@ -277,6 +309,83 @@ describe("ProfilesPage", () => {
           pinchtab: {
             proxyUrl: "http://proxy.local:3128",
             timezone: "Asia/Singapore",
+          },
+        },
+      });
+    });
+  });
+
+  it("saves Cloak proxy, timezone, and launch arg edits", async () => {
+    const { updateProfile } = await import("../services/api");
+    vi.mocked(updateProfile).mockResolvedValue({
+      status: "updated",
+      id: "prof_gamma",
+      name: "gamma",
+    });
+
+    renderProfilesPage();
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Profile: beta/i }),
+      ).toBeInTheDocument();
+    });
+
+    await clickSidebarProfile("gamma");
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Profile: gamma/i }),
+      ).toBeInTheDocument();
+    });
+
+    const detailPanel = getDetailPanel()!;
+    const baseUrlInput = within(detailPanel).getByPlaceholderText(
+      "http://127.0.0.1:8080",
+    );
+    const proxyInput = within(detailPanel).getByDisplayValue(
+      "http://proxy.old:8080",
+    );
+    const timezoneInput = within(detailPanel).getByDisplayValue("UTC");
+    const launchArgsInput = within(detailPanel).getByDisplayValue("--old-arg");
+    const geoipCheckbox = within(detailPanel).getByLabelText("GeoIP");
+    const saveButton = within(detailPanel).getByRole("button", {
+      name: "Save",
+    });
+
+    await userEvent.clear(baseUrlInput);
+    await userEvent.type(baseUrlInput, "http://127.0.0.1:8081");
+    await userEvent.clear(proxyInput);
+    await userEvent.type(proxyInput, "http://proxy.new:9090");
+    await userEvent.clear(timezoneInput);
+    await userEvent.type(timezoneInput, "Australia/Sydney");
+    fireEvent.change(launchArgsInput, {
+      target: {
+        value: "--fingerprint-storage-quota=5000, --fingerprint-noise=false",
+      },
+    });
+    await userEvent.click(geoipCheckbox);
+    await userEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(updateProfile).toHaveBeenCalledWith("prof_gamma", {
+        name: undefined,
+        useWhen: "",
+        backend: {
+          kind: "cloak",
+          cloak: {
+            baseUrl: "http://127.0.0.1:8081",
+            profileId: "cloak-prof-gamma",
+            proxyUrl: "http://proxy.new:9090",
+            timezone: "Australia/Sydney",
+            locale: undefined,
+            launchArgs: [
+              "--fingerprint-storage-quota=5000",
+              "--fingerprint-noise=false",
+            ],
+            headless: false,
+            humanize: false,
+            geoip: true,
           },
         },
       });

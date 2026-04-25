@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -39,6 +42,13 @@ type VersionResponse struct {
 	WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
 }
 
+type UploadStageResponse struct {
+	Path     string `json:"path"`
+	Filename string `json:"filename"`
+	Size     int64  `json:"size"`
+	TabID    string `json:"tab_id"`
+}
+
 func NormalizeBaseURL(raw string) string {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -50,7 +60,7 @@ func NormalizeBaseURL(raw string) string {
 func NewClient(baseURL string) *Client {
 	return &Client{
 		baseURL: NormalizeBaseURL(baseURL),
-		http:    &http.Client{Timeout: 30 * time.Second},
+		http:    &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
@@ -105,6 +115,76 @@ func (c *Client) BrowserWSEndpoint(profileID string) (string, error) {
 		return "", fmt.Errorf("cloak did not return webSocketDebuggerUrl")
 	}
 	return wsURL, nil
+}
+
+func (c *Client) StageUpload(profileID, tabID, sourcePath string) (*UploadStageResponse, error) {
+	file, err := os.Open(sourcePath)
+	if err != nil {
+		return nil, fmt.Errorf("open upload source: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("tab_id", tabID); err != nil {
+		return nil, fmt.Errorf("build cloak upload request: %w", err)
+	}
+	part, err := writer.CreateFormFile("file", filepath.Base(sourcePath))
+	if err != nil {
+		return nil, fmt.Errorf("build cloak upload request: %w", err)
+	}
+	if _, err := io.Copy(part, file); err != nil {
+		return nil, fmt.Errorf("copy upload data: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return nil, fmt.Errorf("finalize cloak upload request: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/api/profiles/"+url.PathEscape(strings.TrimSpace(profileID))+"/upload-stage", &body)
+	if err != nil {
+		return nil, fmt.Errorf("build cloak request: %w", err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("cloak request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 8*1024))
+		msg := strings.TrimSpace(string(data))
+		if msg == "" {
+			msg = http.StatusText(resp.StatusCode)
+		}
+		return nil, fmt.Errorf("cloak POST /api/profiles/%s/upload-stage returned %d: %s", strings.TrimSpace(profileID), resp.StatusCode, msg)
+	}
+	var out UploadStageResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("decode cloak response: %w", err)
+	}
+	return &out, nil
+}
+
+func (c *Client) CleanupUploadStage(profileID, tabID string) error {
+	req, err := http.NewRequest(http.MethodDelete, c.baseURL+"/api/profiles/"+url.PathEscape(strings.TrimSpace(profileID))+"/upload-stage?tab_id="+url.QueryEscape(strings.TrimSpace(tabID)), nil)
+	if err != nil {
+		return fmt.Errorf("build cloak request: %w", err)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("cloak request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 8*1024))
+		msg := strings.TrimSpace(string(data))
+		if msg == "" {
+			msg = http.StatusText(resp.StatusCode)
+		}
+		return fmt.Errorf("cloak DELETE /api/profiles/%s/upload-stage returned %d: %s", strings.TrimSpace(profileID), resp.StatusCode, msg)
+	}
+	return nil
 }
 
 func (c *Client) doJSON(method, path string, body any, out any, expectedStatus int) error {

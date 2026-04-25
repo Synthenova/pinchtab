@@ -16,6 +16,7 @@ import (
 	"github.com/chromedp/cdproto/dom"
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
+	"github.com/pinchtab/pinchtab/internal/cloak"
 	"github.com/pinchtab/pinchtab/internal/httpx"
 )
 
@@ -103,6 +104,13 @@ func (h *Handlers) HandleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	allPaths := append(tempFiles, req.Paths...)
+	if stagedPaths, err := h.stageCloakUploadPaths(resolvedTabID, allPaths); err != nil {
+		_ = os.RemoveAll(stagingDir)
+		httpx.Error(w, 500, fmt.Errorf("stage cloak upload: %w", err))
+		return
+	} else if len(stagedPaths) > 0 {
+		allPaths = stagedPaths
+	}
 
 	tCtx, tCancel := context.WithTimeout(ctx, h.Config.ActionTimeout)
 	defer tCancel()
@@ -372,11 +380,41 @@ func cleanupUploadStagingDir(stateDir, tabID string) error {
 	return os.RemoveAll(filepath.Join(uploadStagingRoot(stateDir), tabID))
 }
 
+func (h *Handlers) cleanupCloakUploadStagingDir(tabID string) error {
+	if h == nil || h.Config == nil {
+		return nil
+	}
+	if strings.TrimSpace(h.Config.CloakBaseURL) == "" || strings.TrimSpace(h.Config.CloakProfileID) == "" || strings.TrimSpace(tabID) == "" {
+		return nil
+	}
+	client := cloak.NewClient(h.Config.CloakBaseURL)
+	return client.CleanupUploadStage(h.Config.CloakProfileID, tabID)
+}
+
 func uploadStagingRoot(stateDir string) string {
 	if strings.TrimSpace(stateDir) == "" {
 		return filepath.Join(os.TempDir(), "pinchtab", uploadStagingDirName)
 	}
 	return filepath.Join(stateDir, uploadStagingDirName)
+}
+
+func (h *Handlers) stageCloakUploadPaths(tabID string, sourcePaths []string) ([]string, error) {
+	if h == nil || h.Config == nil {
+		return nil, nil
+	}
+	if strings.TrimSpace(h.Config.CloakBaseURL) == "" || strings.TrimSpace(h.Config.CloakProfileID) == "" {
+		return nil, nil
+	}
+	client := cloak.NewClient(h.Config.CloakBaseURL)
+	staged := make([]string, 0, len(sourcePaths))
+	for _, sourcePath := range sourcePaths {
+		resp, err := client.StageUpload(h.Config.CloakProfileID, tabID, sourcePath)
+		if err != nil {
+			return nil, err
+		}
+		staged = append(staged, resp.Path)
+	}
+	return staged, nil
 }
 
 // HandleTabUpload uploads files for a tab identified by path ID.

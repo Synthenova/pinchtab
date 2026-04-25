@@ -179,6 +179,8 @@ type browserConfigJSON struct {
 	ChromeBinary         string   `json:"binary"`
 	ChromeDebugPort      *int     `json:"remoteDebuggingPort,omitempty"`
 	ExternalBrowserWSURL string   `json:"externalBrowserWsUrl,omitempty"`
+	CloakBaseURL         string   `json:"cloakBaseUrl,omitempty"`
+	CloakProfileID       string   `json:"cloakProfileId,omitempty"`
 	ChromeExtraFlags     string   `json:"extraFlags"`
 	ProxyURL             string   `json:"proxyUrl"`
 	ExtensionPaths       []string `json:"extensionPaths"`
@@ -352,6 +354,8 @@ func (fc FileConfig) MarshalJSON() ([]byte, error) {
 			ChromeBinary:         fc.Browser.ChromeBinary,
 			ChromeDebugPort:      fc.Browser.ChromeDebugPort,
 			ExternalBrowserWSURL: fc.Browser.ExternalBrowserWSURL,
+			CloakBaseURL:         fc.Browser.CloakBaseURL,
+			CloakProfileID:       fc.Browser.CloakProfileID,
 			ChromeExtraFlags:     fc.Browser.ChromeExtraFlags,
 			ProxyURL:             fc.Browser.ProxyURL,
 			ExtensionPaths:       copyStringSlice(fc.Browser.ExtensionPaths),
@@ -556,6 +560,8 @@ func FileConfigFromRuntime(cfg *RuntimeConfig) FileConfig {
 			ChromeBinary:         cfg.ChromeBinary,
 			ChromeDebugPort:      intPtrIfPositive(cfg.ChromeDebugPort),
 			ExternalBrowserWSURL: cfg.ExternalBrowserWSURL,
+			CloakBaseURL:         cfg.CloakBaseURL,
+			CloakProfileID:       cfg.CloakProfileID,
 			ChromeExtraFlags:     cfg.ChromeExtraFlags,
 			ProxyURL:             cfg.ProxyURL,
 			ExtensionPaths:       append([]string(nil), cfg.ExtensionPaths...),

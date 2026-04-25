@@ -29,7 +29,11 @@ export default function ProfileMetaInfoPanel({ profile, instance }: Props) {
       ? "Headless"
       : "Headed";
   const backendText =
-    profile.backend?.kind === "steel" ? "Steel Browser" : "PinchTab";
+    profile.backend?.kind === "steel"
+      ? "Steel Browser"
+      : profile.backend?.kind === "cloak"
+        ? "Cloak Manager"
+        : "PinchTab";
 
   return (
     <MetaBlock label="Profile panel">
@@ -56,7 +60,7 @@ export default function ProfileMetaInfoPanel({ profile, instance }: Props) {
           </span>
           <span className="text-right">{backendText}</span>
         </div>
-        {profile.backend?.kind !== "steel" &&
+        {profile.backend?.kind === "pinchtab" &&
           profile.backend?.pinchtab?.proxyUrl && (
             <div>
               <div className="dashboard-section-title mb-1 text-[0.68rem]">
@@ -67,7 +71,7 @@ export default function ProfileMetaInfoPanel({ profile, instance }: Props) {
               </code>
             </div>
           )}
-        {profile.backend?.kind !== "steel" &&
+        {profile.backend?.kind === "pinchtab" &&
           profile.backend?.pinchtab?.timezone && (
             <div>
               <div className="dashboard-section-title mb-1 text-[0.68rem]">
@@ -103,6 +107,57 @@ export default function ProfileMetaInfoPanel({ profile, instance }: Props) {
                     className="dashboard-mono block break-all text-xs text-text-secondary"
                   >
                     {path}
+                  </code>
+                ))}
+              </div>
+            </div>
+          )}
+        {profile.backend?.kind === "cloak" &&
+          profile.backend.cloak?.proxyUrl && (
+            <div>
+              <div className="dashboard-section-title mb-1 text-[0.68rem]">
+                Proxy
+              </div>
+              <code className="dashboard-mono block break-all text-xs text-text-secondary">
+                {profile.backend.cloak.proxyUrl}
+              </code>
+            </div>
+          )}
+        {profile.backend?.kind === "cloak" &&
+          profile.backend.cloak?.timezone && (
+            <div>
+              <div className="dashboard-section-title mb-1 text-[0.68rem]">
+                Timezone
+              </div>
+              <code className="dashboard-mono block break-all text-xs text-text-secondary">
+                {profile.backend.cloak.timezone}
+              </code>
+            </div>
+          )}
+        {profile.backend?.kind === "cloak" && profile.backend.cloak?.locale && (
+          <div>
+            <div className="dashboard-section-title mb-1 text-[0.68rem]">
+              Locale
+            </div>
+            <code className="dashboard-mono block break-all text-xs text-text-secondary">
+              {profile.backend.cloak.locale}
+            </code>
+          </div>
+        )}
+        {profile.backend?.kind === "cloak" &&
+          profile.backend.cloak?.launchArgs &&
+          profile.backend.cloak.launchArgs.length > 0 && (
+            <div>
+              <div className="dashboard-section-title mb-1 text-[0.68rem]">
+                Launch Args
+              </div>
+              <div className="space-y-1">
+                {profile.backend.cloak.launchArgs.map((arg) => (
+                  <code
+                    key={arg}
+                    className="dashboard-mono block break-all text-xs text-text-secondary"
+                  >
+                    {arg}
                   </code>
                 ))}
               </div>

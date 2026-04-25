@@ -512,7 +512,7 @@ func (o *Orchestrator) LaunchWithOptions(name, port string, headless bool, exten
 		return nil, fmt.Errorf("create state dir: %w", err)
 	}
 
-	childConfigPath, err := o.writeChildConfig(port, cdpPort, profilePath, instanceStateDir, headless, extensionPaths, externalBrowserWSURL, pinchTabProxyURL, pinchTabTimezone, pinchTabLocale, pinchTabBinary, pinchTabBrowserVersion, pinchTabLaunchArgs)
+	childConfigPath, err := o.writeChildConfig(port, cdpPort, profilePath, instanceStateDir, headless, extensionPaths, externalBrowserWSURL, cloakBaseURL, cloakProfileID, pinchTabProxyURL, pinchTabTimezone, pinchTabLocale, pinchTabBinary, pinchTabBrowserVersion, pinchTabLaunchArgs)
 	if err != nil {
 		return nil, fmt.Errorf("write child config: %w", err)
 	}
@@ -589,7 +589,7 @@ func mergeExtensionPaths(primary []string, secondary []string) []string {
 	return merged
 }
 
-func (o *Orchestrator) writeChildConfig(port string, cdpPort int, profilePath, instanceStateDir string, headless bool, extensionPaths []string, externalBrowserWSURL, proxyURL, timezone, locale, binary, browserVersion string, launchArgs []string) (string, error) {
+func (o *Orchestrator) writeChildConfig(port string, cdpPort int, profilePath, instanceStateDir string, headless bool, extensionPaths []string, externalBrowserWSURL, cloakBaseURL, cloakProfileID, proxyURL, timezone, locale, binary, browserVersion string, launchArgs []string) (string, error) {
 	fc := config.FileConfigFromRuntime(o.runtimeCfg)
 	fc.Server.Port = port
 	fc.Server.StateDir = instanceStateDir
@@ -597,6 +597,8 @@ func (o *Orchestrator) writeChildConfig(port string, cdpPort int, profilePath, i
 	fc.Observability.Activity.Enabled = &activityEnabled
 	fc.Browser.ChromeDebugPort = intPtr(cdpPort)
 	fc.Browser.ExternalBrowserWSURL = externalBrowserWSURL
+	fc.Browser.CloakBaseURL = cloakBaseURL
+	fc.Browser.CloakProfileID = cloakProfileID
 	fc.Profiles.BaseDir = filepath.Dir(profilePath)
 	fc.Profiles.DefaultProfile = filepath.Base(profilePath)
 	if strings.TrimSpace(proxyURL) != "" {

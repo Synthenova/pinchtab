@@ -17,6 +17,28 @@ import (
 	"github.com/pinchtab/pinchtab/internal/bridge"
 )
 
+func newCloakManagerStub() *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/api/profiles/") {
+			http.NotFound(w, r)
+			return
+		}
+		switch r.Method {
+		case http.MethodPut:
+			profileID := strings.TrimPrefix(r.URL.Path, "/api/profiles/")
+			if idx := strings.Index(profileID, "/"); idx >= 0 {
+				profileID = profileID[:idx]
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"id":%q,"status":"updated"}`, profileID)
+		case http.MethodDelete:
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+}
+
 func TestProfileManagerCreateAndList(t *testing.T) {
 	dir := t.TempDir()
 	pm := NewProfileManager(dir)
@@ -721,6 +743,133 @@ func TestProfileUpdateByIDCanClearMetadata(t *testing.T) {
 	}
 	if profiles[0].Description != "" {
 		t.Errorf("expected empty description after clear, got %q", profiles[0].Description)
+	}
+}
+
+func TestProfileUpdateByIDPreservesOmittedCloakFields(t *testing.T) {
+	pm := NewProfileManager(t.TempDir())
+	mux := http.NewServeMux()
+	pm.RegisterHandlers(mux)
+	server := newCloakManagerStub()
+	defer server.Close()
+
+	headless := false
+	humanize := false
+	geoip := true
+	if err := pm.CreateWithMeta("cloaky", ProfileMeta{
+		Backend: &bridge.ProfileBackend{
+			Kind: "cloak",
+			Cloak: &bridge.ProfileBackendCloak{
+				BaseURL:    server.URL,
+				ProfileID:  "cloak-prof-1",
+				ProxyURL:   "http://proxy.old:8080",
+				Timezone:   "Australia/Sydney",
+				LaunchArgs: []string{"--fingerprint-storage-quota=5000", "--disable-http2"},
+				Headless:   &headless,
+				Humanize:   &humanize,
+				GeoIP:      &geoip,
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"backend":{"kind":"cloak","cloak":{"proxyUrl":"socks5://proxy.new:1080","launchArgs":["--fingerprint-storage-quota=5000","--fingerprint-noise=false"]}}}`
+	req := httptest.NewRequest(http.MethodPatch, "/profiles/"+profileID("cloaky"), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	profiles, err := pm.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("expected 1 profile, got %d", len(profiles))
+	}
+	if profiles[0].Backend == nil || profiles[0].Backend.Cloak == nil {
+		t.Fatalf("expected cloak backend, got %#v", profiles[0].Backend)
+	}
+	if profiles[0].Backend.Cloak.BaseURL != server.URL {
+		t.Fatalf("expected base URL preserved, got %q", profiles[0].Backend.Cloak.BaseURL)
+	}
+	if profiles[0].Backend.Cloak.ProfileID != "cloak-prof-1" {
+		t.Fatalf("expected profile ID preserved, got %q", profiles[0].Backend.Cloak.ProfileID)
+	}
+	if profiles[0].Backend.Cloak.Timezone != "Australia/Sydney" {
+		t.Fatalf("expected timezone preserved, got %q", profiles[0].Backend.Cloak.Timezone)
+	}
+	if profiles[0].Backend.Cloak.ProxyURL != "socks5://proxy.new:1080" {
+		t.Fatalf("expected proxy updated, got %q", profiles[0].Backend.Cloak.ProxyURL)
+	}
+	if !reflect.DeepEqual(profiles[0].Backend.Cloak.LaunchArgs, []string{"--fingerprint-storage-quota=5000", "--fingerprint-noise=false"}) {
+		t.Fatalf("expected launch args updated, got %#v", profiles[0].Backend.Cloak.LaunchArgs)
+	}
+	if profiles[0].Backend.Cloak.Headless == nil || *profiles[0].Backend.Cloak.Headless {
+		t.Fatalf("expected headless=false preserved, got %#v", profiles[0].Backend.Cloak.Headless)
+	}
+}
+
+func TestProfileUpdateMetaPreservesOmittedCloakFields(t *testing.T) {
+	pm := NewProfileManager(t.TempDir())
+	mux := http.NewServeMux()
+	pm.RegisterHandlers(mux)
+	server := newCloakManagerStub()
+	defer server.Close()
+
+	headless := false
+	humanize := false
+	geoip := true
+	if err := pm.CreateWithMeta("cloaky", ProfileMeta{
+		Backend: &bridge.ProfileBackend{
+			Kind: "cloak",
+			Cloak: &bridge.ProfileBackendCloak{
+				BaseURL:    server.URL,
+				ProfileID:  "cloak-prof-1",
+				ProxyURL:   "http://proxy.old:8080",
+				Timezone:   "Australia/Sydney",
+				LaunchArgs: []string{"--fingerprint-storage-quota=5000", "--disable-http2"},
+				Headless:   &headless,
+				Humanize:   &humanize,
+				GeoIP:      &geoip,
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"name":"cloaky","backend":{"kind":"cloak","cloak":{"proxyUrl":"socks5://proxy.new:1080","launchArgs":["--fingerprint-storage-quota=5000","--fingerprint-noise=false"]}}}`
+	req := httptest.NewRequest(http.MethodPatch, "/profiles/meta", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	profiles, err := pm.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("expected 1 profile, got %d", len(profiles))
+	}
+	if profiles[0].Backend == nil || profiles[0].Backend.Cloak == nil {
+		t.Fatalf("expected cloak backend, got %#v", profiles[0].Backend)
+	}
+	if profiles[0].Backend.Cloak.BaseURL != server.URL {
+		t.Fatalf("expected base URL preserved, got %q", profiles[0].Backend.Cloak.BaseURL)
+	}
+	if profiles[0].Backend.Cloak.Timezone != "Australia/Sydney" {
+		t.Fatalf("expected timezone preserved, got %q", profiles[0].Backend.Cloak.Timezone)
+	}
+	if profiles[0].Backend.Cloak.ProxyURL != "socks5://proxy.new:1080" {
+		t.Fatalf("expected proxy updated, got %q", profiles[0].Backend.Cloak.ProxyURL)
 	}
 }
 

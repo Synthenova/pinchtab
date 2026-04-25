@@ -351,6 +351,12 @@ func applyFileConfig(cfg *RuntimeConfig, fc *FileConfig) {
 	if fc.Browser.ExternalBrowserWSURL != "" {
 		cfg.ExternalBrowserWSURL = fc.Browser.ExternalBrowserWSURL
 	}
+	if fc.Browser.CloakBaseURL != "" {
+		cfg.CloakBaseURL = fc.Browser.CloakBaseURL
+	}
+	if fc.Browser.CloakProfileID != "" {
+		cfg.CloakProfileID = fc.Browser.CloakProfileID
+	}
 	if fc.Browser.ChromeExtraFlags != "" {
 		cfg.ChromeExtraFlags = SanitizeChromeExtraFlags(fc.Browser.ChromeExtraFlags)
 	}

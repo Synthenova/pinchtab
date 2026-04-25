@@ -32,6 +32,30 @@ export default function ProfileBasicInfoPanel({
   const [steelExtensionPaths, setSteelExtensionPaths] = useState<string[]>(
     profile.backend?.steel?.extensionPaths || [],
   );
+  const [cloakBaseUrl, setCloakBaseUrl] = useState(
+    profile.backend?.cloak?.baseUrl || "http://127.0.0.1:8080",
+  );
+  const [cloakProxyUrl, setCloakProxyUrl] = useState(
+    profile.backend?.cloak?.proxyUrl || "",
+  );
+  const [cloakTimezone, setCloakTimezone] = useState(
+    profile.backend?.cloak?.timezone || "",
+  );
+  const [cloakLocale, setCloakLocale] = useState(
+    profile.backend?.cloak?.locale || "",
+  );
+  const [cloakLaunchArgs, setCloakLaunchArgs] = useState<string[]>(
+    profile.backend?.cloak?.launchArgs || [],
+  );
+  const [cloakHeadless, setCloakHeadless] = useState(
+    profile.backend?.cloak?.headless ?? true,
+  );
+  const [cloakHumanize, setCloakHumanize] = useState(
+    profile.backend?.cloak?.humanize ?? true,
+  );
+  const [cloakGeoip, setCloakGeoip] = useState(
+    profile.backend?.cloak?.geoip ?? false,
+  );
 
   useEffect(() => {
     setName(profile.name);
@@ -40,6 +64,14 @@ export default function ProfileBasicInfoPanel({
     setPinchTabTimezone(profile.backend?.pinchtab?.timezone || "");
     setSteelProxyUrl(profile.backend?.steel?.proxyUrl || "");
     setSteelExtensionPaths(profile.backend?.steel?.extensionPaths || []);
+    setCloakBaseUrl(profile.backend?.cloak?.baseUrl || "http://127.0.0.1:8080");
+    setCloakProxyUrl(profile.backend?.cloak?.proxyUrl || "");
+    setCloakTimezone(profile.backend?.cloak?.timezone || "");
+    setCloakLocale(profile.backend?.cloak?.locale || "");
+    setCloakLaunchArgs(profile.backend?.cloak?.launchArgs || []);
+    setCloakHeadless(profile.backend?.cloak?.headless ?? true);
+    setCloakHumanize(profile.backend?.cloak?.humanize ?? true);
+    setCloakGeoip(profile.backend?.cloak?.geoip ?? false);
   }, [profile]);
 
   useEffect(() => {
@@ -55,17 +87,33 @@ export default function ProfileBasicInfoPanel({
                   : undefined,
             },
           }
-        : {
-            kind: "pinchtab",
-            ...(pinchTabProxyUrl.trim() || pinchTabTimezone.trim()
-              ? {
-                  pinchtab: {
-                    proxyUrl: pinchTabProxyUrl.trim() || undefined,
-                    timezone: pinchTabTimezone.trim() || undefined,
-                  },
-                }
-              : {}),
-          };
+        : profile.backend?.kind === "cloak"
+          ? {
+              kind: "cloak",
+              cloak: {
+                ...profile.backend?.cloak,
+                baseUrl: cloakBaseUrl.trim() || undefined,
+                proxyUrl: cloakProxyUrl.trim() || undefined,
+                timezone: cloakTimezone.trim() || undefined,
+                locale: cloakLocale.trim() || undefined,
+                launchArgs:
+                  cloakLaunchArgs.length > 0 ? cloakLaunchArgs : undefined,
+                headless: cloakHeadless,
+                humanize: cloakHumanize,
+                geoip: cloakGeoip,
+              },
+            }
+          : {
+              kind: "pinchtab",
+              ...(pinchTabProxyUrl.trim() || pinchTabTimezone.trim()
+                ? {
+                    pinchtab: {
+                      proxyUrl: pinchTabProxyUrl.trim() || undefined,
+                      timezone: pinchTabTimezone.trim() || undefined,
+                    },
+                  }
+                : {}),
+            };
     onChange(name, useWhen, backend);
   }, [
     name,
@@ -74,6 +122,14 @@ export default function ProfileBasicInfoPanel({
     pinchTabTimezone,
     steelProxyUrl,
     steelExtensionPaths,
+    cloakBaseUrl,
+    cloakProxyUrl,
+    cloakTimezone,
+    cloakLocale,
+    cloakLaunchArgs,
+    cloakHeadless,
+    cloakHumanize,
+    cloakGeoip,
     profile.backend,
     onChange,
   ]);
@@ -96,7 +152,7 @@ export default function ProfileBasicInfoPanel({
           className={`${minHeight} w-full resize-y rounded border border-border-subtle bg-bg-elevated px-3 py-2 text-sm text-text-primary`}
         />
       </div>
-      {profile.backend?.kind !== "steel" && (
+      {profile.backend?.kind === "pinchtab" && (
         <>
           <Input
             label="Proxy / IP (optional)"
@@ -126,6 +182,66 @@ export default function ProfileBasicInfoPanel({
             value={listToCsv(steelExtensionPaths)}
             onChange={(e) => setSteelExtensionPaths(csvToList(e.target.value))}
           />
+        </>
+      )}
+      {profile.backend?.kind === "cloak" && (
+        <>
+          <Input
+            label="Cloak manager base URL"
+            placeholder="http://127.0.0.1:8080"
+            value={cloakBaseUrl}
+            onChange={(e) => setCloakBaseUrl(e.target.value)}
+          />
+          <Input
+            label="Proxy / IP (optional)"
+            placeholder="http://user:pass@host:port"
+            value={cloakProxyUrl}
+            onChange={(e) => setCloakProxyUrl(e.target.value)}
+          />
+          <Input
+            label="Timezone (optional)"
+            placeholder="Australia/Sydney"
+            value={cloakTimezone}
+            onChange={(e) => setCloakTimezone(e.target.value)}
+          />
+          <Input
+            label="Locale (optional)"
+            placeholder="en-GB"
+            value={cloakLocale}
+            onChange={(e) => setCloakLocale(e.target.value)}
+          />
+          <Input
+            label="Launch args (optional — comma-separated)"
+            placeholder="--fingerprint-storage-quota=5000, --fingerprint-noise=false"
+            value={listToCsv(cloakLaunchArgs)}
+            onChange={(e) => setCloakLaunchArgs(csvToList(e.target.value))}
+          />
+          <div className="grid gap-2 sm:grid-cols-3">
+            <label className="flex items-center gap-2 text-sm text-text-primary">
+              <input
+                type="checkbox"
+                checked={cloakHeadless}
+                onChange={(e) => setCloakHeadless(e.target.checked)}
+              />
+              Headless
+            </label>
+            <label className="flex items-center gap-2 text-sm text-text-primary">
+              <input
+                type="checkbox"
+                checked={cloakHumanize}
+                onChange={(e) => setCloakHumanize(e.target.checked)}
+              />
+              Humanize
+            </label>
+            <label className="flex items-center gap-2 text-sm text-text-primary">
+              <input
+                type="checkbox"
+                checked={cloakGeoip}
+                onChange={(e) => setCloakGeoip(e.target.checked)}
+              />
+              GeoIP
+            </label>
+          </div>
         </>
       )}
     </div>

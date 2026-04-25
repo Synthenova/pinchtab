@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import CreateProfileModal from "./CreateProfileModal";
@@ -85,9 +85,9 @@ describe("CreateProfileModal", () => {
       screen.getByPlaceholderText("http://user:pass@host:port"),
       "http://proxy.local:8080",
     );
-    await userEvent.type(
+    fireEvent.change(
       screen.getByPlaceholderText("/path/to/ext-one, /path/to/ext-two"),
-      "/tmp/ext-one, /tmp/ext-two",
+      { target: { value: "/tmp/ext-one, /tmp/ext-two" } },
     );
 
     await userEvent.click(screen.getByRole("button", { name: "Create" }));
@@ -166,6 +166,84 @@ describe("CreateProfileModal", () => {
     expect(onCreated).toHaveBeenCalledWith("prof_pinchtab");
   });
 
+  it("submits a Cloak-backed profile with launch args", async () => {
+    const { createProfile } = await import("../../services/api");
+    const onClose = vi.fn();
+    const onCreated = vi.fn();
+
+    vi.mocked(createProfile).mockResolvedValue({
+      status: "ok",
+      id: "prof_cloak",
+      name: "cloak-work",
+    });
+
+    render(
+      <CreateProfileModal
+        open={true}
+        onClose={onClose}
+        onCreated={onCreated}
+      />,
+    );
+
+    await userEvent.type(
+      screen.getByPlaceholderText("e.g. personal, work, scraping"),
+      "cloak-work",
+    );
+    await userEvent.selectOptions(screen.getByLabelText("Browser backend"), [
+      "cloak",
+    ]);
+    await userEvent.clear(screen.getByPlaceholderText("http://127.0.0.1:8080"));
+    await userEvent.type(
+      screen.getByPlaceholderText("http://127.0.0.1:8080"),
+      "http://127.0.0.1:8080",
+    );
+    await userEvent.type(
+      screen.getAllByPlaceholderText("http://user:pass@host:port")[0],
+      "http://proxy.local:8080",
+    );
+    await userEvent.type(screen.getByPlaceholderText("en-GB"), "en-GB");
+    fireEvent.change(
+      screen.getByPlaceholderText(
+        "--fingerprint=42069, --fingerprint-storage-quota=5000",
+      ),
+      {
+        target: {
+          value:
+            "--fingerprint-storage-quota=5000, --fingerprint-noise=false, --disable-http2, --fingerprint=42069",
+        },
+      },
+    );
+    await userEvent.click(screen.getByLabelText("GeoIP"));
+
+    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    await waitFor(() => {
+      expect(createProfile).toHaveBeenCalledWith({
+        name: "cloak-work",
+        useWhen: undefined,
+        backend: {
+          kind: "cloak",
+          cloak: {
+            baseUrl: "http://127.0.0.1:8080",
+            proxyUrl: "http://proxy.local:8080",
+            locale: "en-GB",
+            launchArgs: [
+              "--fingerprint-storage-quota=5000",
+              "--fingerprint-noise=false",
+              "--disable-http2",
+              "--fingerprint=42069",
+            ],
+            headless: true,
+            humanize: true,
+            geoip: true,
+          },
+        },
+      });
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onCreated).toHaveBeenCalledWith("prof_cloak");
+  });
+
   it("resets its local fields when closed and reopened", async () => {
     const { rerender } = render(
       <CreateProfileModal
@@ -200,5 +278,25 @@ describe("CreateProfileModal", () => {
       screen.getByPlaceholderText("e.g. personal, work, scraping"),
     ).toHaveValue("");
     expect(screen.getByLabelText("Browser backend")).toHaveValue("pinchtab");
+  });
+
+  it("starts Cloak launch args with the default values", async () => {
+    render(
+      <CreateProfileModal
+        open={true}
+        onClose={() => {}}
+        onCreated={() => {}}
+      />,
+    );
+
+    await userEvent.selectOptions(screen.getByLabelText("Browser backend"), [
+      "cloak",
+    ]);
+
+    expect(
+      screen.getByDisplayValue(
+        "--fingerprint-storage-quota=5000, --fingerprint-noise=false, --disable-http2",
+      ),
+    ).toBeInTheDocument();
   });
 });
