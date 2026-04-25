@@ -10,6 +10,21 @@ type ProfileBackendSteel struct {
 	ExtensionPaths []string `json:"extensionPaths,omitempty"`
 }
 
+// ProfileBackendCloak mirrors the Cloak-specific backend settings for a profile.
+type ProfileBackendCloak struct {
+	BaseURL   string `json:"baseUrl,omitempty"`
+	ProfileID string `json:"profileId,omitempty"`
+	ProxyURL  string `json:"proxyUrl,omitempty"`
+	Timezone  string `json:"timezone,omitempty"`
+	Locale    string `json:"locale,omitempty"`
+	Platform  string `json:"platform,omitempty"`
+	UserAgent string `json:"userAgent,omitempty"`
+	Headless  *bool  `json:"headless,omitempty"`
+	Humanize  *bool  `json:"humanize,omitempty"`
+	GeoIP     *bool  `json:"geoip,omitempty"`
+	Notes     string `json:"notes,omitempty"`
+}
+
 // ProfileBackendPinchTab mirrors the PinchTab-specific backend settings for a profile.
 type ProfileBackendPinchTab struct {
 	ProxyURL string `json:"proxyUrl,omitempty"`
@@ -19,6 +34,7 @@ type ProfileBackendPinchTab struct {
 // ProfileBackend describes which browser runtime backs a profile.
 type ProfileBackend struct {
 	Kind     string                  `json:"kind,omitempty"`
+	Cloak    *ProfileBackendCloak    `json:"cloak,omitempty"`
 	Steel    *ProfileBackendSteel    `json:"steel,omitempty"`
 	PinchTab *ProfileBackendPinchTab `json:"pinchtab,omitempty"`
 }

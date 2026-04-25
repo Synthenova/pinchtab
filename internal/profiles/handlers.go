@@ -175,6 +175,19 @@ func (pm *ProfileManager) handleUpdateMeta(w http.ResponseWriter, r *http.Reques
 		updates["useWhen"] = *req.UseWhen
 	}
 	if req.Backend != nil {
+		if req.Backend.Cloak != nil {
+			updates["backend.cloak.baseUrl"] = req.Backend.Cloak.BaseURL
+			updates["backend.cloak.profileId"] = req.Backend.Cloak.ProfileID
+			updates["backend.cloak.proxyUrl"] = req.Backend.Cloak.ProxyURL
+			updates["backend.cloak.timezone"] = req.Backend.Cloak.Timezone
+			updates["backend.cloak.locale"] = req.Backend.Cloak.Locale
+			updates["backend.cloak.platform"] = req.Backend.Cloak.Platform
+			updates["backend.cloak.userAgent"] = req.Backend.Cloak.UserAgent
+			updates["backend.cloak.notes"] = req.Backend.Cloak.Notes
+			updates["backend.cloak.headless"] = formatOptionalBool(req.Backend.Cloak.Headless)
+			updates["backend.cloak.humanize"] = formatOptionalBool(req.Backend.Cloak.Humanize)
+			updates["backend.cloak.geoip"] = formatOptionalBool(req.Backend.Cloak.GeoIP)
+		}
 		updates["backend.kind"] = req.Backend.Kind
 		if req.Backend.Steel != nil {
 			updates["backend.steel.proxyUrl"] = req.Backend.Steel.ProxyURL
@@ -293,6 +306,7 @@ func (pm *ProfileManager) handleUpdateByID(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	updates := make(map[string]string)
 	finalName := name
 	if req.Name != nil && *req.Name != name {
 		if err := pm.Rename(name, *req.Name); err != nil {
@@ -300,9 +314,9 @@ func (pm *ProfileManager) handleUpdateByID(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		finalName = *req.Name
+		updates["name"] = finalName
 	}
 
-	updates := make(map[string]string)
 	if req.Description != nil {
 		updates["description"] = *req.Description
 	}
@@ -311,6 +325,19 @@ func (pm *ProfileManager) handleUpdateByID(w http.ResponseWriter, r *http.Reques
 	}
 	if req.Backend != nil {
 		updates["backend.kind"] = req.Backend.Kind
+		if req.Backend.Cloak != nil {
+			updates["backend.cloak.baseUrl"] = req.Backend.Cloak.BaseURL
+			updates["backend.cloak.profileId"] = req.Backend.Cloak.ProfileID
+			updates["backend.cloak.proxyUrl"] = req.Backend.Cloak.ProxyURL
+			updates["backend.cloak.timezone"] = req.Backend.Cloak.Timezone
+			updates["backend.cloak.locale"] = req.Backend.Cloak.Locale
+			updates["backend.cloak.platform"] = req.Backend.Cloak.Platform
+			updates["backend.cloak.userAgent"] = req.Backend.Cloak.UserAgent
+			updates["backend.cloak.notes"] = req.Backend.Cloak.Notes
+			updates["backend.cloak.headless"] = formatOptionalBool(req.Backend.Cloak.Headless)
+			updates["backend.cloak.humanize"] = formatOptionalBool(req.Backend.Cloak.Humanize)
+			updates["backend.cloak.geoip"] = formatOptionalBool(req.Backend.Cloak.GeoIP)
+		}
 		if req.Backend.Steel != nil {
 			updates["backend.steel.proxyUrl"] = req.Backend.Steel.ProxyURL
 			updates["backend.steel.extensionPaths"] = encodeProfileStringList(req.Backend.Steel.ExtensionPaths)
@@ -329,6 +356,16 @@ func (pm *ProfileManager) handleUpdateByID(w http.ResponseWriter, r *http.Reques
 
 	authn.AuditLog(r, "profile.updated", "profileId", profileID(finalName), "profileName", finalName)
 	httpx.JSON(w, 200, map[string]any{"status": "updated", "id": profileID(finalName), "name": finalName})
+}
+
+func formatOptionalBool(v *bool) string {
+	if v == nil {
+		return ""
+	}
+	if *v {
+		return "true"
+	}
+	return "false"
 }
 
 func (pm *ProfileManager) handleResetByIDOrName(w http.ResponseWriter, r *http.Request) {

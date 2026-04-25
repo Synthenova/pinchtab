@@ -15,6 +15,7 @@ import (
 
 	"github.com/pinchtab/pinchtab/internal/activity"
 	"github.com/pinchtab/pinchtab/internal/bridge"
+	"github.com/pinchtab/pinchtab/internal/cloak"
 	"github.com/pinchtab/pinchtab/internal/ids"
 )
 
@@ -293,6 +294,21 @@ func normalizeProfileBackend(backend *bridge.ProfileBackend) *bridge.ProfileBack
 		normalized.Kind = "pinchtab"
 	}
 	switch normalized.Kind {
+	case "cloak":
+		if normalized.Cloak == nil {
+			normalized.Cloak = &bridge.ProfileBackendCloak{}
+		}
+		normalized.Cloak.BaseURL = cloak.NormalizeBaseURL(normalized.Cloak.BaseURL)
+		normalized.Cloak.ProfileID = strings.TrimSpace(normalized.Cloak.ProfileID)
+		normalized.Cloak.ProxyURL = strings.TrimSpace(normalized.Cloak.ProxyURL)
+		normalized.Cloak.Timezone = strings.TrimSpace(normalized.Cloak.Timezone)
+		normalized.Cloak.Locale = strings.TrimSpace(normalized.Cloak.Locale)
+		normalized.Cloak.Platform = strings.TrimSpace(normalized.Cloak.Platform)
+		normalized.Cloak.UserAgent = strings.TrimSpace(normalized.Cloak.UserAgent)
+		normalized.Cloak.Notes = strings.TrimSpace(normalized.Cloak.Notes)
+		normalized.Steel = nil
+		normalized.PinchTab = nil
+		return &normalized
 	case "steel":
 		if normalized.Steel == nil {
 			normalized.Steel = &bridge.ProfileBackendSteel{}
@@ -349,6 +365,8 @@ func validateProfileBackend(backend *bridge.ProfileBackend) error {
 	}
 	switch backend.Kind {
 	case "", "pinchtab":
+		return nil
+	case "cloak":
 		return nil
 	case "steel":
 		return nil
@@ -409,10 +427,10 @@ func (pm *ProfileManager) Import(name, sourcePath string) error {
 }
 
 func (pm *ProfileManager) ImportWithMeta(name, sourcePath string, meta ProfileMeta) error {
-	if err := pm.Import(name, sourcePath); err != nil {
+	if err := validateProfileBackend(meta.Backend); err != nil {
 		return err
 	}
-	if err := validateProfileBackend(meta.Backend); err != nil {
+	if err := pm.Import(name, sourcePath); err != nil {
 		return err
 	}
 	if meta.ID == "" {
@@ -422,6 +440,10 @@ func (pm *ProfileManager) ImportWithMeta(name, sourcePath string, meta ProfileMe
 		meta.Name = name
 	}
 	meta.Backend = normalizeProfileBackend(meta.Backend)
+	if err := ensureCloakProfile(name, meta.Backend); err != nil {
+		_ = os.RemoveAll(filepath.Join(pm.baseDir, profileID(name)))
+		return err
+	}
 	dest := filepath.Join(pm.baseDir, profileID(name))
 	return writeProfileMeta(dest, meta)
 }
@@ -495,10 +517,10 @@ func pathWithinRoot(path, root string) bool {
 }
 
 func (pm *ProfileManager) CreateWithMeta(name string, meta ProfileMeta) error {
-	if err := pm.Create(name); err != nil {
+	if err := validateProfileBackend(meta.Backend); err != nil {
 		return err
 	}
-	if err := validateProfileBackend(meta.Backend); err != nil {
+	if err := pm.Create(name); err != nil {
 		return err
 	}
 	if meta.ID == "" {
@@ -508,6 +530,10 @@ func (pm *ProfileManager) CreateWithMeta(name string, meta ProfileMeta) error {
 		meta.Name = name
 	}
 	meta.Backend = normalizeProfileBackend(meta.Backend)
+	if err := ensureCloakProfile(name, meta.Backend); err != nil {
+		_ = os.RemoveAll(filepath.Join(pm.baseDir, profileID(name)))
+		return err
+	}
 	dest := filepath.Join(pm.baseDir, profileID(name))
 	return writeProfileMeta(dest, meta)
 }
@@ -570,6 +596,10 @@ func (pm *ProfileManager) Delete(name string) error {
 
 	dir, err := pm.findProfileDirByName(name)
 	if err != nil {
+		return err
+	}
+	meta := normalizeProfileBackend(readProfileMeta(dir).Backend)
+	if err := deleteCloakProfile(meta); err != nil {
 		return err
 	}
 	return os.RemoveAll(dir)
@@ -688,9 +718,13 @@ func (pm *ProfileManager) UpdateMeta(name string, meta map[string]string) error 
 	if existing.Name == "" {
 		existing.Name = name
 	}
+	previousBackend := normalizeProfileBackend(existing.Backend)
 
 	if useWhen, ok := meta["useWhen"]; ok {
 		existing.UseWhen = useWhen
+	}
+	if profileName, ok := meta["name"]; ok && strings.TrimSpace(profileName) != "" {
+		existing.Name = strings.TrimSpace(profileName)
 	}
 	if description, ok := meta["description"]; ok {
 		existing.Description = description
@@ -743,7 +777,150 @@ func (pm *ProfileManager) UpdateMeta(name string, meta map[string]string) error 
 			existing.Backend.Kind = "pinchtab"
 		}
 	}
+	if backendBaseURL, ok := meta["backend.cloak.baseUrl"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		if existing.Backend.Cloak == nil {
+			existing.Backend.Cloak = &bridge.ProfileBackendCloak{}
+		}
+		existing.Backend.Cloak.BaseURL = backendBaseURL
+		if existing.Backend.Kind == "" {
+			existing.Backend.Kind = "cloak"
+		}
+	}
+	if backendProfileID, ok := meta["backend.cloak.profileId"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		if existing.Backend.Cloak == nil {
+			existing.Backend.Cloak = &bridge.ProfileBackendCloak{}
+		}
+		existing.Backend.Cloak.ProfileID = backendProfileID
+		if existing.Backend.Kind == "" {
+			existing.Backend.Kind = "cloak"
+		}
+	}
+	if backendProxyURL, ok := meta["backend.cloak.proxyUrl"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		if existing.Backend.Cloak == nil {
+			existing.Backend.Cloak = &bridge.ProfileBackendCloak{}
+		}
+		existing.Backend.Cloak.ProxyURL = backendProxyURL
+		if existing.Backend.Kind == "" {
+			existing.Backend.Kind = "cloak"
+		}
+	}
+	if backendTimezone, ok := meta["backend.cloak.timezone"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		if existing.Backend.Cloak == nil {
+			existing.Backend.Cloak = &bridge.ProfileBackendCloak{}
+		}
+		existing.Backend.Cloak.Timezone = backendTimezone
+		if existing.Backend.Kind == "" {
+			existing.Backend.Kind = "cloak"
+		}
+	}
+	if backendLocale, ok := meta["backend.cloak.locale"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		if existing.Backend.Cloak == nil {
+			existing.Backend.Cloak = &bridge.ProfileBackendCloak{}
+		}
+		existing.Backend.Cloak.Locale = backendLocale
+		if existing.Backend.Kind == "" {
+			existing.Backend.Kind = "cloak"
+		}
+	}
+	if backendPlatform, ok := meta["backend.cloak.platform"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		if existing.Backend.Cloak == nil {
+			existing.Backend.Cloak = &bridge.ProfileBackendCloak{}
+		}
+		existing.Backend.Cloak.Platform = backendPlatform
+		if existing.Backend.Kind == "" {
+			existing.Backend.Kind = "cloak"
+		}
+	}
+	if backendUserAgent, ok := meta["backend.cloak.userAgent"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		if existing.Backend.Cloak == nil {
+			existing.Backend.Cloak = &bridge.ProfileBackendCloak{}
+		}
+		existing.Backend.Cloak.UserAgent = backendUserAgent
+		if existing.Backend.Kind == "" {
+			existing.Backend.Kind = "cloak"
+		}
+	}
+	if backendNotes, ok := meta["backend.cloak.notes"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		if existing.Backend.Cloak == nil {
+			existing.Backend.Cloak = &bridge.ProfileBackendCloak{}
+		}
+		existing.Backend.Cloak.Notes = backendNotes
+		if existing.Backend.Kind == "" {
+			existing.Backend.Kind = "cloak"
+		}
+	}
+	if backendHeadless, ok := meta["backend.cloak.headless"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		if existing.Backend.Cloak == nil {
+			existing.Backend.Cloak = &bridge.ProfileBackendCloak{}
+		}
+		existing.Backend.Cloak.Headless = parseOptionalBool(backendHeadless)
+		if existing.Backend.Kind == "" {
+			existing.Backend.Kind = "cloak"
+		}
+	}
+	if backendHumanize, ok := meta["backend.cloak.humanize"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		if existing.Backend.Cloak == nil {
+			existing.Backend.Cloak = &bridge.ProfileBackendCloak{}
+		}
+		existing.Backend.Cloak.Humanize = parseOptionalBool(backendHumanize)
+		if existing.Backend.Kind == "" {
+			existing.Backend.Kind = "cloak"
+		}
+	}
+	if backendGeoIP, ok := meta["backend.cloak.geoip"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		if existing.Backend.Cloak == nil {
+			existing.Backend.Cloak = &bridge.ProfileBackendCloak{}
+		}
+		existing.Backend.Cloak.GeoIP = parseOptionalBool(backendGeoIP)
+		if existing.Backend.Kind == "" {
+			existing.Backend.Kind = "cloak"
+		}
+	}
 	if err := validateProfileBackend(existing.Backend); err != nil {
+		return err
+	}
+	if previousBackend != nil && previousBackend.Kind == "cloak" {
+		nextBackend := normalizeProfileBackend(existing.Backend)
+		if nextBackend == nil || nextBackend.Kind != "cloak" {
+			if err := deleteCloakProfile(previousBackend); err != nil {
+				return err
+			}
+		}
+	}
+	if err := syncCloakProfile(existing.Name, existing.Backend); err != nil {
 		return err
 	}
 	existing.Backend = normalizeProfileBackend(existing.Backend)

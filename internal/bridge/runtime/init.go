@@ -67,7 +67,7 @@ func InitChrome(cfg *config.RuntimeConfig, bundle *stealth.Bundle, hooks Hooks) 
 }
 
 func startAttachedChrome(parentCtx context.Context, cfg *config.RuntimeConfig, bundle *stealth.Bundle, wsURL string) (context.Context, context.CancelFunc, stealth.LaunchMode, error) {
-	remoteAllocCtx, remoteAllocCancel := chromedp.NewRemoteAllocator(parentCtx, wsURL)
+	remoteAllocCtx, remoteAllocCancel := chromedp.NewRemoteAllocator(parentCtx, wsURL, chromedp.NoModifyURL)
 	browserCtx, browserCancel := chromedp.NewContext(remoteAllocCtx)
 
 	return browserCtx, func() {

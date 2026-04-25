@@ -92,6 +92,8 @@ type InstanceInternal struct {
 	steelPort      int
 	steelCDPPort   int
 	steelSessionID string
+	cloakBaseURL   string
+	cloakProfileID string
 	browserProxy   *browserproxy.Server
 	logBuf         *ringBuffer
 }
@@ -287,6 +289,15 @@ func (o *Orchestrator) resolvePinchTabLaunchDefaults(profileName, proxyURL, time
 	return resolvedProxy, resolvedTimezone
 }
 
+func (o *Orchestrator) resolveCloakLaunchDefaults(profileName string) *bridge.ProfileBackendCloak {
+	backend := o.profileBackend(profileName)
+	if backend == nil || backend.Kind != "cloak" || backend.Cloak == nil {
+		return nil
+	}
+	copy := *backend.Cloak
+	return &copy
+}
+
 func installStableBinary(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
@@ -391,8 +402,11 @@ func (o *Orchestrator) LaunchWithOptions(name, port string, headless bool, exten
 	steelBaseURL := ""
 	steelPort := 0
 	steelCDPPort := 0
+	cloakBaseURL := ""
+	cloakProfileID := ""
 	pinchTabProxyURL := ""
 	pinchTabTimezone := ""
+	backendKind := "pinchtab"
 	var browserProxy *browserproxy.Server
 	launchSucceeded := false
 	defer func() {
@@ -400,7 +414,21 @@ func (o *Orchestrator) LaunchWithOptions(name, port string, headless bool, exten
 			_ = browserProxy.Close()
 		}
 	}()
-	if backend := o.profileBackend(name); backend != nil && backend.Kind == "steel" {
+	if backend := o.profileBackend(name); backend != nil && backend.Kind == "cloak" {
+		backendKind = "cloak"
+		cloakCfg := o.resolveCloakLaunchDefaults(name)
+		if cloakCfg == nil || strings.TrimSpace(cloakCfg.ProfileID) == "" {
+			return nil, fmt.Errorf("cloak backend missing profileId for profile %q", name)
+		}
+		session, err := createCloakSession(cloakCfg.BaseURL, cloakCfg.ProfileID)
+		if err != nil {
+			return nil, err
+		}
+		externalBrowserWSURL = session.WSURL
+		cloakBaseURL = session.BaseURL
+		cloakProfileID = session.ProfileID
+	} else if backend != nil && backend.Kind == "steel" {
+		backendKind = "steel"
 		proxyURL := steelProxyURL
 		steelExtensionPaths := extensionPaths
 		if proxyURL == "" && backend.Steel != nil {
@@ -478,7 +506,7 @@ func (o *Orchestrator) LaunchWithOptions(name, port string, headless bool, exten
 			ID:          instanceID,
 			ProfileID:   profileID,
 			ProfileName: name,
-			Backend:     "pinchtab",
+			Backend:     backendKind,
 			Port:        port,
 			URL:         fmt.Sprintf("http://localhost:%s", port),
 			Headless:    headless,
@@ -493,6 +521,8 @@ func (o *Orchestrator) LaunchWithOptions(name, port string, headless bool, exten
 		steelPort:      steelPort,
 		steelCDPPort:   steelCDPPort,
 		steelSessionID: steelSessionID,
+		cloakBaseURL:   cloakBaseURL,
+		cloakProfileID: cloakProfileID,
 		browserProxy:   browserProxy,
 		logBuf:         logBuf,
 	}
@@ -706,10 +736,15 @@ func (o *Orchestrator) Stop(id string) error {
 	inst.Status = "stopping"
 	steelBaseURL := inst.steelBaseURL
 	steelSessionID := inst.steelSessionID
+	cloakBaseURL := inst.cloakBaseURL
+	cloakProfileID := inst.cloakProfileID
 	o.mu.Unlock()
 
 	if steelSessionID != "" && steelBaseURL != "" {
 		releaseSteelSession(steelBaseURL, steelSessionID)
+	}
+	if cloakProfileID != "" && cloakBaseURL != "" {
+		stopCloakSession(cloakBaseURL, cloakProfileID)
 	}
 
 	if inst.cmd == nil {

@@ -74,6 +74,20 @@ type ProfileBackendSteel struct {
 	ExtensionPaths []string `json:"extensionPaths,omitempty"`
 }
 
+type ProfileBackendCloak struct {
+	BaseURL   string `json:"baseUrl,omitempty"`
+	ProfileID string `json:"profileId,omitempty"`
+	ProxyURL  string `json:"proxyUrl,omitempty"`
+	Timezone  string `json:"timezone,omitempty"`
+	Locale    string `json:"locale,omitempty"`
+	Platform  string `json:"platform,omitempty"`
+	UserAgent string `json:"userAgent,omitempty"`
+	Headless  *bool  `json:"headless,omitempty"`
+	Humanize  *bool  `json:"humanize,omitempty"`
+	GeoIP     *bool  `json:"geoip,omitempty"`
+	Notes     string `json:"notes,omitempty"`
+}
+
 type ProfileBackendPinchTab struct {
 	ProxyURL string `json:"proxyUrl,omitempty"`
 	Timezone string `json:"timezone,omitempty"`
@@ -81,6 +95,7 @@ type ProfileBackendPinchTab struct {
 
 type ProfileBackend struct {
 	Kind     string                  `json:"kind,omitempty"`
+	Cloak    *ProfileBackendCloak    `json:"cloak,omitempty"`
 	Steel    *ProfileBackendSteel    `json:"steel,omitempty"`
 	PinchTab *ProfileBackendPinchTab `json:"pinchtab,omitempty"`
 }
@@ -158,7 +173,7 @@ type Instance struct {
 	ID          string    `json:"id"`                   // Hash-based ID: inst_XXXXXXXX
 	ProfileID   string    `json:"profileId"`            // Hash-based profile ID: prof_XXXXXXXX
 	ProfileName string    `json:"profileName"`          // Human-readable profile name (for display only)
-	Backend     string    `json:"backend,omitempty"`    // Runtime backend: pinchtab or steel
+	Backend     string    `json:"backend,omitempty"`    // Runtime backend: pinchtab, steel, or cloak
 	Port        string    `json:"port"`                 // Internal: instance port
 	URL         string    `json:"url,omitempty"`        // Canonical base URL for bridge-backed instances
 	Headless    bool      `json:"headless"`             // Mode: headless vs headed
