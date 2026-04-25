@@ -1093,6 +1093,164 @@ func TestProfileHandlerImportRejectsInvalidProfileName(t *testing.T) {
 	}
 }
 
+func TestProfileHandlerExportSelectedProfiles(t *testing.T) {
+	pm := NewProfileManager(t.TempDir())
+	if err := pm.CreateWithMeta("Layer", ProfileMeta{
+		Description: "headed cloak profile",
+		UseWhen:     "Use for storefront auth",
+		Backend: &bridge.ProfileBackend{
+			Kind: "pinchtab",
+			PinchTab: &bridge.ProfileBackendPinchTab{
+				ProxyURL:   "http://proxy.example:8000",
+				Timezone:   "America/Denver",
+				LaunchArgs: []string{"--flag-a"},
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := pm.CreateWithMeta("Other", ProfileMeta{
+		Backend: &bridge.ProfileBackend{Kind: "pinchtab"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	mux := http.NewServeMux()
+	pm.RegisterHandlers(mux)
+
+	req := httptest.NewRequest(http.MethodPost, "/profiles/export", strings.NewReader(`{"names":["Layer"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var bundle ProfileConfigBundle
+	if err := json.Unmarshal(w.Body.Bytes(), &bundle); err != nil {
+		t.Fatal(err)
+	}
+	if bundle.Version != profileConfigBundleVersion {
+		t.Fatalf("expected version %q, got %q", profileConfigBundleVersion, bundle.Version)
+	}
+	if len(bundle.Profiles) != 1 {
+		t.Fatalf("expected 1 exported profile, got %d", len(bundle.Profiles))
+	}
+	if bundle.Profiles[0].Name != "Layer" {
+		t.Fatalf("expected Layer, got %q", bundle.Profiles[0].Name)
+	}
+	if bundle.Profiles[0].Backend == nil || bundle.Profiles[0].Backend.Kind != "pinchtab" {
+		t.Fatalf("expected pinchtab backend, got %#v", bundle.Profiles[0].Backend)
+	}
+}
+
+func TestProfileHandlerImportConfigCreatesProfiles(t *testing.T) {
+	pm := NewProfileManager(t.TempDir())
+	mux := http.NewServeMux()
+	pm.RegisterHandlers(mux)
+
+	body := `{
+		"profiles": [
+			{
+				"name": "Layer",
+				"description": "imported config",
+				"useWhen": "Use for headless checks",
+				"backend": {
+					"kind": "pinchtab",
+					"pinchtab": {
+						"proxyUrl": "http://proxy.example:9000",
+						"timezone": "America/Denver",
+						"launchArgs": ["--flag-a","--flag-b"]
+					}
+				}
+			}
+		]
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/profiles/import-config", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	meta, err := pm.Meta("Layer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta.Description != "imported config" {
+		t.Fatalf("expected description to be imported, got %q", meta.Description)
+	}
+	if meta.Backend == nil || meta.Backend.PinchTab == nil {
+		t.Fatalf("expected imported pinch tab backend, got %#v", meta.Backend)
+	}
+	if meta.Backend.PinchTab.ProxyURL != "http://proxy.example:9000" {
+		t.Fatalf("expected imported proxy, got %q", meta.Backend.PinchTab.ProxyURL)
+	}
+}
+
+func TestProfileHandlerImportConfigOverwrite(t *testing.T) {
+	pm := NewProfileManager(t.TempDir())
+	if err := pm.CreateWithMeta("Layer", ProfileMeta{
+		Description: "old",
+		Backend: &bridge.ProfileBackend{
+			Kind: "pinchtab",
+			PinchTab: &bridge.ProfileBackendPinchTab{
+				ProxyURL: "http://old-proxy:8000",
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	mux := http.NewServeMux()
+	pm.RegisterHandlers(mux)
+
+	body := `{
+		"overwrite": true,
+		"profiles": [
+			{
+				"name": "Layer",
+				"description": "new",
+				"backend": {
+					"kind": "pinchtab",
+					"pinchtab": {
+						"proxyUrl": "http://new-proxy:9000",
+						"timezone": "America/New_York"
+					}
+				}
+			}
+		]
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/profiles/import-config", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	meta, err := pm.Meta("Layer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta.Description != "new" {
+		t.Fatalf("expected overwritten description, got %q", meta.Description)
+	}
+	if meta.Backend == nil || meta.Backend.PinchTab == nil {
+		t.Fatalf("expected pinch tab backend, got %#v", meta.Backend)
+	}
+	if meta.Backend.PinchTab.ProxyURL != "http://new-proxy:9000" {
+		t.Fatalf("expected overwritten proxy, got %q", meta.Backend.PinchTab.ProxyURL)
+	}
+	if meta.Backend.PinchTab.Timezone != "America/New_York" {
+		t.Fatalf("expected overwritten timezone, got %q", meta.Backend.PinchTab.Timezone)
+	}
+}
+
 func TestProfileHandlerCreateReturns409OnDuplicate(t *testing.T) {
 	pm := NewProfileManager(t.TempDir())
 	mux := http.NewServeMux()

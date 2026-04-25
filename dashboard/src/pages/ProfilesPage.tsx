@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useLocation } from "react-router-dom";
 import { useAppStore } from "../stores/useAppStore";
 import { EmptyState, Button, Badge } from "../components/atoms";
@@ -13,6 +13,22 @@ import ProfileDetailsPanel from "../profiles/ProfileDetailsPanel";
 
 function getProfileKey(profile: Profile) {
   return profile.id || profile.name;
+}
+
+function getProfileSelectionId(profile: Profile) {
+  return profile.id || profile.name;
+}
+
+function downloadJson(filename: string, value: unknown) {
+  const blob = new Blob([JSON.stringify(value, null, 2)], {
+    type: "application/json",
+  });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  window.URL.revokeObjectURL(url);
 }
 
 interface ProfilesLocationState {
@@ -34,6 +50,11 @@ export default function ProfilesPage() {
   const [selectedProfileKey, setSelectedProfileKey] = useState<string | null>(
     null,
   );
+  const [selectedExportIds, setSelectedExportIds] = useState<string[]>([]);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [banner, setBanner] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const locationState = location.state as ProfilesLocationState | null;
   const routeSelectedProfileKey = locationState?.selectedProfileKey ?? null;
@@ -43,6 +64,11 @@ export default function ProfilesPage() {
     try {
       const data = await api.fetchProfiles();
       setProfiles(data);
+      setSelectedExportIds((prev) =>
+        prev.filter((id) =>
+          data.some((profile) => getProfileSelectionId(profile) === id),
+        ),
+      );
       if (preferredProfileKey) {
         const preferred = data.find(
           (profile) =>
@@ -131,6 +157,71 @@ export default function ProfilesPage() {
     }
   };
 
+  const toggleExportSelection = (profile: Profile) => {
+    const selectionId = getProfileSelectionId(profile);
+    setSelectedExportIds((prev) =>
+      prev.includes(selectionId)
+        ? prev.filter((id) => id !== selectionId)
+        : [...prev, selectionId],
+    );
+  };
+
+  const handleExport = async (mode: "selected" | "all") => {
+    if (mode === "selected" && selectedExportIds.length === 0) {
+      setBanner("Select at least one profile to export.");
+      return;
+    }
+    setExporting(true);
+    setBanner(null);
+    try {
+      const bundle = await api.exportProfileConfigs(
+        mode === "selected" ? { ids: selectedExportIds } : {},
+      );
+      const label =
+        mode === "selected" && bundle.profiles.length === 1
+          ? bundle.profiles[0].name
+          : `${bundle.profiles.length}-profiles`;
+      downloadJson(`pinchtab-${label}.json`, bundle);
+      setBanner(
+        `Exported ${bundle.profiles.length} profile${bundle.profiles.length === 1 ? "" : "s"}.`,
+      );
+    } catch (e) {
+      console.error("Failed to export profiles", e);
+      setBanner("Export failed.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleImportFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const [file] = Array.from(event.target.files || []);
+    event.target.value = "";
+    if (!file) return;
+
+    setImporting(true);
+    setBanner(null);
+    try {
+      const text = await file.text();
+      const payload = JSON.parse(text) as api.ProfileConfigBundle;
+      const imported = await api.importProfileConfigs({
+        bundle: payload,
+      });
+      await loadProfiles();
+      setBanner(
+        `Imported ${imported.count} profile${imported.count === 1 ? "" : "s"}.`,
+      );
+    } catch (e) {
+      console.error("Failed to import profiles", e);
+      setBanner("Import failed. Check that the JSON bundle is valid.");
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const instanceByProfile = useMemo(
     () => new Map(instances.map((i) => [i.profileName, i])),
     [instances],
@@ -208,13 +299,72 @@ export default function ProfilesPage() {
                   <span className="text-xs font-medium text-text-muted">
                     Profiles
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => setShowCreate(true)}
-                    className="rounded bg-primary px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-primary/90"
-                  >
-                    New Profile
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={handleImportClick}
+                      loading={importing}
+                    >
+                      Import
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => handleExport("selected")}
+                      disabled={selectedExportIds.length === 0}
+                      loading={exporting}
+                    >
+                      Export Selected
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="primary"
+                      onClick={() => setShowCreate(true)}
+                    >
+                      New Profile
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="border-b border-border-subtle px-4 py-2.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="flex items-center gap-2 text-xs text-text-muted">
+                      <input
+                        type="checkbox"
+                        className="h-3.5 w-3.5 rounded border-border-subtle bg-transparent"
+                        checked={
+                          orderedProfiles.length > 0 &&
+                          selectedExportIds.length === orderedProfiles.length
+                        }
+                        onChange={(event) => {
+                          setSelectedExportIds(
+                            event.target.checked
+                              ? orderedProfiles.map((profile) =>
+                                  getProfileSelectionId(profile),
+                                )
+                              : [],
+                          );
+                        }}
+                      />
+                      Select all
+                    </label>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleExport("all")}
+                      loading={exporting}
+                    >
+                      Export All
+                    </Button>
+                  </div>
+                  {banner && (
+                    <div className="mt-2 text-xs text-text-muted">{banner}</div>
+                  )}
                 </div>
 
                 <div className="flex-1 overflow-auto">
@@ -223,6 +373,9 @@ export default function ProfilesPage() {
                       const instance = instanceByProfile.get(profile.name);
                       const isSelected =
                         getProfileKey(profile) === selectedProfileKey;
+                      const isMarkedForExport = selectedExportIds.includes(
+                        getProfileSelectionId(profile),
+                      );
                       const accountText =
                         profile.accountEmail ||
                         profile.accountName ||
@@ -241,36 +394,54 @@ export default function ProfilesPage() {
                             : "stopped";
 
                       return (
-                        <button
+                        <div
                           key={getProfileKey(profile)}
-                          type="button"
-                          onClick={() =>
-                            setSelectedProfileKey(getProfileKey(profile))
-                          }
                           className={`w-full border-b border-border-subtle px-3 py-2.5 text-left transition-colors ${
                             isSelected
                               ? "bg-bg-hover text-text-primary"
                               : "hover:bg-bg-hover/50"
                           }`}
                         >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="truncate text-sm font-semibold text-text-primary">
-                                {profile.name}
+                          <div className="flex items-start gap-3">
+                            <label className="mt-0.5 flex shrink-0 items-center">
+                              <input
+                                type="checkbox"
+                                aria-label={`Select ${profile.name} for export`}
+                                className="h-3.5 w-3.5 rounded border-border-subtle bg-transparent"
+                                checked={isMarkedForExport}
+                                onChange={() => toggleExportSelection(profile)}
+                                onClick={(event) => event.stopPropagation()}
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setSelectedProfileKey(getProfileKey(profile))
+                              }
+                              className="min-w-0 flex-1 text-left"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="truncate text-sm font-semibold text-text-primary">
+                                    {profile.name}
+                                  </div>
+                                  <div className="mt-1 text-xs text-text-muted">
+                                    {accountText}
+                                  </div>
+                                </div>
+                                <Badge variant={statusVariant}>
+                                  {statusLabel}
+                                </Badge>
                               </div>
-                              <div className="mt-1 text-xs text-text-muted">
-                                {accountText}
-                              </div>
-                            </div>
-                            <Badge variant={statusVariant}>{statusLabel}</Badge>
-                          </div>
 
-                          {profile.useWhen && (
-                            <div className="mt-3 line-clamp-2 text-xs leading-5 text-text-secondary">
-                              {profile.useWhen}
-                            </div>
-                          )}
-                        </button>
+                              {profile.useWhen && (
+                                <div className="mt-3 line-clamp-2 text-xs leading-5 text-text-secondary">
+                                  {profile.useWhen}
+                                </div>
+                              )}
+                            </button>
+                          </div>
+                        </div>
                       );
                     })}
                   </div>
@@ -311,6 +482,14 @@ export default function ProfilesPage() {
         open={!!launchProfile}
         profile={launchProfile}
         onClose={() => setLaunchProfileKey(null)}
+      />
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="application/json,.json"
+        className="hidden"
+        onChange={handleImportFile}
       />
     </div>
   );

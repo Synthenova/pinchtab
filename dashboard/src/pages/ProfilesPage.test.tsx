@@ -17,8 +17,10 @@ vi.mock("../services/api", () => ({
   fetchProfiles: vi.fn(),
   createProfile: vi.fn(),
   deleteProfile: vi.fn(),
+  exportProfileConfigs: vi.fn(),
   updateProfile: vi.fn(),
   fetchInstances: vi.fn(),
+  importProfileConfigs: vi.fn(),
   launchInstance: vi.fn(),
   stopInstance: vi.fn(),
   fetchInstanceTabs: vi.fn(),
@@ -113,7 +115,7 @@ function clickSidebarProfile(name: string) {
 
 function getDetailPanel() {
   return document.querySelector(
-    ".dashboard-panel .min-w-0.flex-1",
+    ".dashboard-panel > .min-h-0.min-w-0.flex-1",
   ) as HTMLElement;
 }
 
@@ -122,6 +124,16 @@ describe("ProfilesPage", () => {
     vi.clearAllMocks();
     vi.mocked(api.fetchProfiles).mockResolvedValue(profiles);
     vi.mocked(api.fetchInstances).mockResolvedValue(instances);
+    vi.mocked(api.exportProfileConfigs).mockResolvedValue({
+      version: "pinchtab.profile-config.v1",
+      exportedAt: "2026-04-25T00:00:00Z",
+      profiles: [],
+    });
+    vi.mocked(api.importProfileConfigs).mockResolvedValue({
+      status: "imported",
+      profiles: [],
+      count: 0,
+    });
     useAppStore.setState({
       profiles,
       profilesLoading: false,
@@ -141,10 +153,13 @@ describe("ProfilesPage", () => {
     const sidebar = document.querySelector(
       ".bg-bg-surface\\/50",
     ) as HTMLElement;
-    const sidebarButtons = within(sidebar).getAllByRole("button");
-    const profileButtons = sidebarButtons.filter((b) =>
-      b.classList.contains("border-b"),
-    );
+    const profileButtons = within(sidebar)
+      .getAllByRole("button")
+      .filter((button) =>
+        ["alpha", "beta", "gamma"].some((name) =>
+          button.textContent?.includes(name),
+        ),
+      );
     expect(profileButtons[0]).toHaveTextContent("beta");
     expect(profileButtons[1]).toHaveTextContent("alpha");
 
@@ -389,6 +404,123 @@ describe("ProfilesPage", () => {
           },
         },
       });
+    });
+  });
+
+  it("exports selected profiles from the sidebar", async () => {
+    const exportBundle = {
+      version: "pinchtab.profile-config.v1",
+      exportedAt: "2026-04-25T00:00:00Z",
+      profiles: [
+        {
+          id: "prof_gamma",
+          name: "gamma",
+          backend: { kind: "cloak" as const },
+        },
+      ],
+    };
+    vi.mocked(api.exportProfileConfigs).mockResolvedValue(exportBundle);
+    const createObjectURL = vi
+      .spyOn(URL, "createObjectURL")
+      .mockReturnValue("blob:pinchtab-export");
+    const revokeObjectURL = vi
+      .spyOn(URL, "revokeObjectURL")
+      .mockImplementation(() => {});
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+
+    renderProfilesPage();
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Profile: beta/i }),
+      ).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByLabelText("Select gamma for export"));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Export Selected" }),
+    );
+
+    await waitFor(() => {
+      expect(api.exportProfileConfigs).toHaveBeenCalledWith({
+        ids: ["prof_gamma"],
+      });
+    });
+    expect(clickSpy).toHaveBeenCalled();
+    expect(createObjectURL).toHaveBeenCalled();
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:pinchtab-export");
+
+    createObjectURL.mockRestore();
+    revokeObjectURL.mockRestore();
+    clickSpy.mockRestore();
+  });
+
+  it("imports profiles from a JSON bundle", async () => {
+    const importedProfiles: Profile[] = [
+      ...profiles,
+      {
+        id: "prof_layer_import",
+        name: "Layer import",
+        created: "2026-04-25T10:00:00Z",
+        lastUsed: "2026-04-25T10:00:00Z",
+        diskUsage: 512,
+        sizeMB: 8,
+        running: false,
+        backend: {
+          kind: "cloak",
+          cloak: {
+            baseUrl: "http://127.0.0.1:8080",
+          },
+        },
+      },
+    ];
+    vi.mocked(api.importProfileConfigs).mockResolvedValue({
+      status: "imported",
+      profiles: ["Layer import"],
+      count: 1,
+    });
+    vi.mocked(api.fetchProfiles)
+      .mockResolvedValueOnce(profiles)
+      .mockResolvedValueOnce(importedProfiles);
+
+    renderProfilesPage();
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Profile: beta/i }),
+      ).toBeInTheDocument();
+    });
+
+    const fileInput = document.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    const file = new File(
+      [
+        JSON.stringify({
+          version: "pinchtab.profile-config.v1",
+          exportedAt: "2026-04-25T00:00:00Z",
+          profiles: [{ name: "Layer import", backend: { kind: "cloak" } }],
+        }),
+      ],
+      "layer-import.json",
+      { type: "application/json" },
+    );
+
+    await userEvent.upload(fileInput, file);
+
+    await waitFor(() => {
+      expect(api.importProfileConfigs).toHaveBeenCalledWith({
+        bundle: {
+          version: "pinchtab.profile-config.v1",
+          exportedAt: "2026-04-25T00:00:00Z",
+          profiles: [{ name: "Layer import", backend: { kind: "cloak" } }],
+        },
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getByText("Imported 1 profile.")).toBeInTheDocument();
     });
   });
 });

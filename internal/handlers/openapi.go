@@ -116,6 +116,11 @@ func (h *Handlers) HandleOpenAPI(w http.ResponseWriter, _ *http.Request) {
 				"description":        security["stateExport"].Message,
 				"x-pinchtab-enabled": security["stateExport"].Enabled,
 			}},
+			"/profiles":               map[string]any{"get": map[string]any{"summary": "List saved profiles"}, "post": map[string]any{"summary": "Create a profile"}},
+			"/profiles/{id}":          map[string]any{"patch": map[string]any{"summary": "Update a profile"}, "delete": map[string]any{"summary": "Delete a profile"}},
+			"/profiles/export":        map[string]any{"post": map[string]any{"summary": "Export all or selected profile configs as a JSON bundle"}},
+			"/profiles/import":        map[string]any{"post": map[string]any{"summary": "Import a profile directory or a profile config bundle"}},
+			"/profiles/import-config": map[string]any{"post": map[string]any{"summary": "Import profile configs from a JSON bundle"}},
 		},
 	})
 }

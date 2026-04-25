@@ -203,6 +203,58 @@ export async function updateProfile(
   });
 }
 
+export interface ProfileConfigRecord {
+  id: string;
+  name: string;
+  description?: string;
+  useWhen?: string;
+  backend?: Profile["backend"];
+}
+
+export interface ProfileConfigBundle {
+  version: string;
+  exportedAt: string;
+  profiles: ProfileConfigRecord[];
+}
+
+export interface ExportProfilesRequest {
+  ids?: string[];
+  names?: string[];
+}
+
+export interface ImportProfileConfigsRequest {
+  bundle?: ProfileConfigBundle;
+  profiles?: ProfileConfigRecord[];
+  overwrite?: boolean;
+  preserveCloakProfileIds?: boolean;
+}
+
+export interface ImportProfileConfigsResponse {
+  status: string;
+  profiles: string[];
+  count: number;
+}
+
+export async function exportProfileConfigs(
+  data: ExportProfilesRequest,
+): Promise<ProfileConfigBundle> {
+  return request<ProfileConfigBundle>("/profiles/export", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function importProfileConfigs(
+  data: ImportProfileConfigsRequest,
+): Promise<ImportProfileConfigsResponse> {
+  return request<ImportProfileConfigsResponse>("/profiles/import-config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
 // Instances — endpoint is /instances (no /api prefix)
 export async function fetchInstances(): Promise<Instance[]> {
   return request<Instance[]>("/instances");

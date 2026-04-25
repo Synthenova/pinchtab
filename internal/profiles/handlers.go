@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pinchtab/pinchtab/internal/authn"
 	"github.com/pinchtab/pinchtab/internal/bridge"
@@ -153,7 +154,9 @@ func (pm *ProfileManager) RegisterHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("POST /profiles/create", pm.handleCreate)
 	mux.HandleFunc("GET /profiles/{id}", pm.handleGetByID)
 
+	mux.HandleFunc("POST /profiles/export", pm.handleExport)
 	mux.HandleFunc("POST /profiles/import", pm.handleImport)
+	mux.HandleFunc("POST /profiles/import-config", pm.handleImportConfig)
 	mux.HandleFunc("PATCH /profiles/meta", pm.handleUpdateMeta)
 	mux.HandleFunc("POST /profiles/{id}/reset", pm.handleResetByIDOrName)
 	mux.HandleFunc("GET /profiles/{id}/logs", pm.handleLogsByIDOrName)
@@ -240,6 +243,21 @@ func (pm *ProfileManager) handleCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (pm *ProfileManager) handleImport(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		httpx.Error(w, 400, err)
+		return
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
+		httpx.Error(w, httpx.StatusForJSONDecodeError(err), err)
+		return
+	}
+	if hasJSONField(raw, "profiles") || hasJSONField(raw, "bundle") {
+		pm.handleImportConfigPayload(w, r, body)
+		return
+	}
+
 	var req struct {
 		Name        string                 `json:"name"`
 		SourcePath  string                 `json:"sourcePath"`
@@ -247,7 +265,7 @@ func (pm *ProfileManager) handleImport(w http.ResponseWriter, r *http.Request) {
 		UseWhen     string                 `json:"useWhen"`
 		Backend     *bridge.ProfileBackend `json:"backend"`
 	}
-	if err := httpx.DecodeJSONBody(w, r, 0, &req); err != nil {
+	if err := json.Unmarshal(body, &req); err != nil {
 		httpx.Error(w, httpx.StatusForJSONDecodeError(err), err)
 		return
 	}
@@ -268,6 +286,78 @@ func (pm *ProfileManager) handleImport(w http.ResponseWriter, r *http.Request) {
 	}
 	authn.AuditLog(r, "profile.imported", "profileName", req.Name)
 	httpx.JSON(w, 200, map[string]string{"status": "imported", "name": req.Name})
+}
+
+func (pm *ProfileManager) handleExport(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		IDs   []string `json:"ids"`
+		Names []string `json:"names"`
+	}
+	if err := httpx.DecodeJSONBody(w, r, 0, &req); err != nil {
+		httpx.Error(w, httpx.StatusForJSONDecodeError(err), err)
+		return
+	}
+	bundle, err := pm.ExportConfigBundle(req.IDs, req.Names)
+	if err != nil {
+		httpx.Error(w, profileMutationStatus(err), err)
+		return
+	}
+	authn.AuditLog(r, "profile.exported", "count", len(bundle.Profiles))
+	httpx.JSON(w, 200, bundle)
+}
+
+func (pm *ProfileManager) handleImportConfig(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		httpx.Error(w, 400, err)
+		return
+	}
+	pm.handleImportConfigPayload(w, r, body)
+}
+
+func (pm *ProfileManager) handleImportConfigPayload(w http.ResponseWriter, r *http.Request, body []byte) {
+	var req struct {
+		Bundle                  *ProfileConfigBundle  `json:"bundle"`
+		Profiles                []ProfileConfigRecord `json:"profiles"`
+		Overwrite               bool                  `json:"overwrite"`
+		PreserveCloakProfileIDs bool                  `json:"preserveCloakProfileIds"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		httpx.Error(w, httpx.StatusForJSONDecodeError(err), err)
+		return
+	}
+
+	bundle := ProfileConfigBundle{
+		Version:    profileConfigBundleVersion,
+		ExportedAt: time.Time{},
+		Profiles:   req.Profiles,
+	}
+	if req.Bundle != nil {
+		bundle = *req.Bundle
+		if len(req.Profiles) > 0 && len(bundle.Profiles) == 0 {
+			bundle.Profiles = req.Profiles
+		}
+	}
+	if len(bundle.Profiles) == 0 {
+		httpx.Error(w, 400, fmt.Errorf("profiles required"))
+		return
+	}
+
+	imported, err := pm.ImportConfigBundle(bundle, ProfileConfigImportOptions{
+		Overwrite:               req.Overwrite,
+		PreserveCloakProfileIDs: req.PreserveCloakProfileIDs,
+	})
+	if err != nil {
+		httpx.Error(w, profileMutationStatus(err), err)
+		return
+	}
+
+	authn.AuditLog(r, "profile.config_imported", "count", len(imported))
+	httpx.JSON(w, 200, map[string]any{
+		"status":   "imported",
+		"profiles": imported,
+		"count":    len(imported),
+	})
 }
 
 func (pm *ProfileManager) handleUpdateMeta(w http.ResponseWriter, r *http.Request) {
