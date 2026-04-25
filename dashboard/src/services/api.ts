@@ -213,6 +213,62 @@ export async function startProfileSync(id: string): Promise<ProfileSyncStatus> {
   );
 }
 
+export interface DiscoverCloudProfilesRequest {
+  bucket: string;
+  prefix: string;
+  credentialPath: string;
+}
+
+export interface DiscoveredCloudProfile {
+  profileId: string;
+  name: string;
+  updatedAt?: string;
+  proxyUrl?: string;
+  timezone?: string;
+  locale?: string;
+  binary?: string;
+  browserVersion?: string;
+  launchArgs?: string[];
+}
+
+export interface DiscoverCloudProfilesResponse {
+  profiles: DiscoveredCloudProfile[];
+}
+
+export interface ImportCloudProfileRequest {
+  bucket: string;
+  prefix: string;
+  credentialPath: string;
+  profileId: string;
+  name?: string;
+  keepLocalCache?: boolean;
+}
+
+export interface ImportCloudProfileResponse {
+  status: string;
+  name: string;
+}
+
+export async function discoverCloudProfiles(
+  data: DiscoverCloudProfilesRequest,
+): Promise<DiscoverCloudProfilesResponse> {
+  return request<DiscoverCloudProfilesResponse>("/profiles/cloud/discover", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function importCloudProfile(
+  data: ImportCloudProfileRequest,
+): Promise<ImportCloudProfileResponse> {
+  return request<ImportCloudProfileResponse>("/profiles/cloud/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
 export async function createProfile(
   data: CreateProfileRequest,
 ): Promise<CreateProfileResponse> {

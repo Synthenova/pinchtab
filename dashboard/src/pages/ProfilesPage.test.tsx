@@ -22,6 +22,8 @@ vi.mock("../services/api", () => ({
   updateProfile: vi.fn(),
   fetchInstances: vi.fn(),
   importProfileConfigs: vi.fn(),
+  discoverCloudProfiles: vi.fn(),
+  importCloudProfile: vi.fn(),
   launchInstance: vi.fn(),
   startProfileSync: vi.fn(),
   stopInstance: vi.fn(),
@@ -149,6 +151,13 @@ describe("ProfilesPage", () => {
       status: "imported",
       profiles: [],
       count: 0,
+    });
+    vi.mocked(api.discoverCloudProfiles).mockResolvedValue({
+      profiles: [],
+    });
+    vi.mocked(api.importCloudProfile).mockResolvedValue({
+      status: "imported",
+      name: "alpha-cloud",
     });
     vi.mocked(api.startProfileSync).mockResolvedValue({
       state: "queued",
@@ -576,6 +585,86 @@ describe("ProfilesPage", () => {
     });
     await waitFor(() => {
       expect(screen.getByText("Imported 1 profile.")).toBeInTheDocument();
+    });
+  });
+
+  it("discovers and attaches a cloud profile", async () => {
+    const cloudAttachedProfiles: Profile[] = [
+      ...profiles,
+      {
+        id: "prof_layer_cloud",
+        name: "Layer Headed",
+        created: "2026-04-25T10:00:00Z",
+        lastUsed: "2026-04-25T10:00:00Z",
+        diskUsage: 1024,
+        sizeMB: 10,
+        running: false,
+        backend: {
+          kind: "pinchtab",
+          pinchtab: {
+            cloud: {
+              enabled: true,
+              bucket: "conthunt-dev-pinchtab-profiles",
+              prefix: "pinchtab/profiles",
+              profileId: "cp_remote_layer",
+              credentialPath:
+                "/Users/nirmal/Desktop/pinchtab/gcs-bucket-ops.json",
+            },
+          },
+        },
+      },
+    ];
+    vi.mocked(api.discoverCloudProfiles).mockResolvedValue({
+      profiles: [
+        {
+          profileId: "cp_remote_layer",
+          name: "Layer Headed",
+          timezone: "America/Denver",
+          locale: "en-US",
+          updatedAt: "2026-04-26T10:00:00Z",
+        },
+      ],
+    });
+    vi.mocked(api.importCloudProfile).mockResolvedValue({
+      status: "imported",
+      name: "Layer Headed",
+    });
+    vi.mocked(api.fetchProfiles)
+      .mockResolvedValueOnce(profiles)
+      .mockResolvedValueOnce(cloudAttachedProfiles);
+
+    renderProfilesPage();
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Profile: beta/i }),
+      ).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Import Cloud" }));
+    await userEvent.click(screen.getByRole("button", { name: "Scan Cloud" }));
+
+    await waitFor(() => {
+      expect(api.discoverCloudProfiles).toHaveBeenCalledWith({
+        bucket: "conthunt-dev-pinchtab-profiles",
+        prefix: "pinchtab/profiles",
+        credentialPath: "/Users/nirmal/Desktop/pinchtab/gcs-bucket-ops.json",
+      });
+    });
+
+    const attachButton = await screen.findByRole("button", { name: "Attach" });
+    await userEvent.click(attachButton);
+
+    await waitFor(() => {
+      expect(api.importCloudProfile).toHaveBeenCalledWith({
+        bucket: "conthunt-dev-pinchtab-profiles",
+        prefix: "pinchtab/profiles",
+        credentialPath: "/Users/nirmal/Desktop/pinchtab/gcs-bucket-ops.json",
+        profileId: "cp_remote_layer",
+      });
+    });
+    await waitFor(() => {
+      expect(api.fetchProfiles).toHaveBeenCalledTimes(1);
     });
   });
 });

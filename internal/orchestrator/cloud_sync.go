@@ -80,7 +80,12 @@ func (o *Orchestrator) handleStartProfileSync(w http.ResponseWriter, r *http.Req
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	status, err := cloudprofiles.StartSync(ctx, name, profilePath, cfg)
+	backend := o.profileBackend(name)
+	var settings *bridge.ProfileBackendPinchTab
+	if backend != nil {
+		settings = backend.PinchTab
+	}
+	status, err := cloudprofiles.StartSync(ctx, name, profilePath, cfg, settings)
 	if err != nil {
 		httpx.Error(w, 500, err)
 		return

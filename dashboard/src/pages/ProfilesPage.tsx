@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useLocation } from "react-router-dom";
 import { useAppStore } from "../stores/useAppStore";
-import { EmptyState, Button, Badge } from "../components/atoms";
+import { EmptyState, Button, Badge, Input, Modal } from "../components/atoms";
 import * as api from "../services/api";
 import type { Profile } from "../generated/types";
 import type { UpdateProfileRequest } from "../services/api";
@@ -35,6 +35,204 @@ interface ProfilesLocationState {
   selectedProfileKey?: string;
 }
 
+const defaultCloudBucket = "conthunt-dev-pinchtab-profiles";
+const defaultCloudPrefix = "pinchtab/profiles";
+const defaultCloudCredentialPath =
+  "/Users/nirmal/Desktop/pinchtab/gcs-bucket-ops.json";
+
+interface CloudImportModalProps {
+  open: boolean;
+  onClose: () => void;
+  onImported: (preferredProfileKey?: string) => Promise<void> | void;
+}
+
+function CloudImportModal({
+  open,
+  onClose,
+  onImported,
+}: CloudImportModalProps) {
+  const [bucket, setBucket] = useState(defaultCloudBucket);
+  const [prefix, setPrefix] = useState(defaultCloudPrefix);
+  const [credentialPath, setCredentialPath] = useState(
+    defaultCloudCredentialPath,
+  );
+  const [discovering, setDiscovering] = useState(false);
+  const [importingProfileId, setImportingProfileId] = useState<string | null>(
+    null,
+  );
+  const [discovered, setDiscovered] = useState<api.DiscoveredCloudProfile[]>(
+    [],
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      return;
+    }
+    setDiscovering(false);
+    setImportingProfileId(null);
+    setDiscovered([]);
+    setError(null);
+  }, [open]);
+
+  const handleDiscover = async () => {
+    setDiscovering(true);
+    setError(null);
+    try {
+      const result = await api.discoverCloudProfiles({
+        bucket: bucket.trim(),
+        prefix: prefix.trim(),
+        credentialPath: credentialPath.trim(),
+      });
+      setDiscovered(result.profiles);
+    } catch (err) {
+      console.error("Failed to discover cloud profiles", err);
+      setError(err instanceof Error ? err.message : "Cloud discover failed.");
+      setDiscovered([]);
+    } finally {
+      setDiscovering(false);
+    }
+  };
+
+  const handleImport = async (profile: api.DiscoveredCloudProfile) => {
+    setImportingProfileId(profile.profileId);
+    setError(null);
+    try {
+      const result = await api.importCloudProfile({
+        bucket: bucket.trim(),
+        prefix: prefix.trim(),
+        credentialPath: credentialPath.trim(),
+        profileId: profile.profileId,
+      });
+      await onImported(result.name);
+      onClose();
+    } catch (err) {
+      console.error("Failed to import cloud profile", err);
+      setError(err instanceof Error ? err.message : "Cloud import failed.");
+    } finally {
+      setImportingProfileId(null);
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="☁️ Import Cloud Profile"
+      wide
+      actions={
+        <>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={onClose}
+            disabled={discovering || !!importingProfileId}
+          >
+            Close
+          </Button>
+          <Button
+            type="button"
+            variant="primary"
+            onClick={handleDiscover}
+            loading={discovering}
+            disabled={
+              !bucket.trim() || !prefix.trim() || !credentialPath.trim()
+            }
+          >
+            Scan Cloud
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <Input
+          label="Bucket"
+          placeholder={defaultCloudBucket}
+          value={bucket}
+          onChange={(event) => setBucket(event.target.value)}
+        />
+        <Input
+          label="Prefix"
+          placeholder={defaultCloudPrefix}
+          value={prefix}
+          onChange={(event) => setPrefix(event.target.value)}
+        />
+        <Input
+          label="Credential path"
+          placeholder={defaultCloudCredentialPath}
+          value={credentialPath}
+          onChange={(event) => setCredentialPath(event.target.value)}
+        />
+
+        {error && (
+          <div className="rounded border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {error}
+          </div>
+        )}
+
+        <div className="rounded border border-border-subtle bg-black/10">
+          <div className="border-b border-border-subtle px-3 py-2 text-xs font-medium uppercase tracking-[0.18em] text-text-muted">
+            Discovered Profiles
+          </div>
+          {discovered.length === 0 ? (
+            <div className="px-3 py-4 text-sm text-text-muted">
+              Scan the configured bucket to list cloud-backed profiles.
+            </div>
+          ) : (
+            <div className="flex max-h-96 flex-col overflow-auto">
+              {discovered.map((profile) => (
+                <div
+                  key={profile.profileId}
+                  className="border-b border-border-subtle px-3 py-3 last:border-b-0"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-text-primary">
+                        {profile.name || profile.profileId}
+                      </div>
+                      <div className="mt-1 break-all text-xs text-text-muted">
+                        {profile.profileId}
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-secondary">
+                        {profile.timezone && (
+                          <span>TZ: {profile.timezone}</span>
+                        )}
+                        {profile.locale && (
+                          <span>Locale: {profile.locale}</span>
+                        )}
+                        {profile.proxyUrl && <span>Proxy configured</span>}
+                        {profile.updatedAt && (
+                          <span>
+                            Updated{" "}
+                            {new Date(profile.updatedAt).toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="primary"
+                      onClick={() => void handleImport(profile)}
+                      loading={importingProfileId === profile.profileId}
+                      disabled={
+                        !!importingProfileId &&
+                        importingProfileId !== profile.profileId
+                      }
+                    >
+                      Attach
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 export default function ProfilesPage() {
   const location = useLocation();
   const {
@@ -53,6 +251,7 @@ export default function ProfilesPage() {
   const [selectedExportIds, setSelectedExportIds] = useState<string[]>([]);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [showCloudImport, setShowCloudImport] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const [syncingProfileId, setSyncingProfileId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -351,6 +550,14 @@ export default function ProfilesPage() {
                     <Button
                       type="button"
                       size="sm"
+                      variant="ghost"
+                      onClick={() => setShowCloudImport(true)}
+                    >
+                      Import Cloud
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
                       variant="secondary"
                       onClick={() => handleExport("selected")}
                       disabled={selectedExportIds.length === 0}
@@ -541,6 +748,12 @@ export default function ProfilesPage() {
         open={showCreate}
         onClose={() => setShowCreate(false)}
         onCreated={loadProfiles}
+      />
+
+      <CloudImportModal
+        open={showCloudImport}
+        onClose={() => setShowCloudImport(false)}
+        onImported={loadProfiles}
       />
 
       <StartInstanceModal

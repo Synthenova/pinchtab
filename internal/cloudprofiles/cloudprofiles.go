@@ -24,6 +24,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/pinchtab/pinchtab/internal/bridge"
 	"google.golang.org/api/googleapi"
+	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 	gcsapi "google.golang.org/api/storage/v1"
 )
@@ -35,9 +36,15 @@ const (
 )
 
 type remoteMeta struct {
-	ProfileID string    `json:"profileId"`
-	Name      string    `json:"name"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ProfileID      string    `json:"profileId"`
+	Name           string    `json:"name"`
+	UpdatedAt      time.Time `json:"updatedAt"`
+	ProxyURL       string    `json:"proxyUrl,omitempty"`
+	Timezone       string    `json:"timezone,omitempty"`
+	Locale         string    `json:"locale,omitempty"`
+	Binary         string    `json:"binary,omitempty"`
+	BrowserVersion string    `json:"browserVersion,omitempty"`
+	LaunchArgs     []string  `json:"launchArgs,omitempty"`
 }
 
 type latestVersion struct {
@@ -71,6 +78,18 @@ type Session struct {
 	RemoteLatest latestVersion
 	InitialHash  string
 	stopRenew    func()
+}
+
+type DiscoveredProfile struct {
+	ProfileID      string    `json:"profileId"`
+	Name           string    `json:"name"`
+	UpdatedAt      time.Time `json:"updatedAt"`
+	ProxyURL       string    `json:"proxyUrl,omitempty"`
+	Timezone       string    `json:"timezone,omitempty"`
+	Locale         string    `json:"locale,omitempty"`
+	Binary         string    `json:"binary,omitempty"`
+	BrowserVersion string    `json:"browserVersion,omitempty"`
+	LaunchArgs     []string  `json:"launchArgs,omitempty"`
 }
 
 type Client struct {
@@ -226,17 +245,38 @@ func userLabel() string {
 	return "unknown-user"
 }
 
-func (c *Client) ensureMeta(ctx context.Context, profileName string) error {
+func settingsSnapshot(settings *bridge.ProfileBackendPinchTab) remoteMeta {
+	if settings == nil {
+		return remoteMeta{}
+	}
+	return remoteMeta{
+		ProxyURL:       strings.TrimSpace(settings.ProxyURL),
+		Timezone:       strings.TrimSpace(settings.Timezone),
+		Locale:         strings.TrimSpace(settings.Locale),
+		Binary:         strings.TrimSpace(settings.Binary),
+		BrowserVersion: strings.TrimSpace(settings.BrowserVersion),
+		LaunchArgs:     append([]string(nil), settings.LaunchArgs...),
+	}
+}
+
+func (c *Client) ensureMeta(ctx context.Context, profileName string, settings *bridge.ProfileBackendPinchTab) error {
+	snapshot := settingsSnapshot(settings)
 	meta := remoteMeta{
-		ProfileID: c.cfg.ProfileID,
-		Name:      profileName,
-		UpdatedAt: time.Now().UTC(),
+		ProfileID:      c.cfg.ProfileID,
+		Name:           profileName,
+		UpdatedAt:      time.Now().UTC(),
+		ProxyURL:       snapshot.ProxyURL,
+		Timezone:       snapshot.Timezone,
+		Locale:         snapshot.Locale,
+		Binary:         snapshot.Binary,
+		BrowserVersion: snapshot.BrowserVersion,
+		LaunchArgs:     snapshot.LaunchArgs,
 	}
 	return writeJSON(ctx, c.object("meta.json"), meta)
 }
 
-func (c *Client) AcquireLease(ctx context.Context, profileName string) (leaseRecord, error) {
-	_ = c.ensureMeta(ctx, profileName)
+func (c *Client) AcquireLease(ctx context.Context, profileName string, settings *bridge.ProfileBackendPinchTab) (leaseRecord, error) {
+	_ = c.ensureMeta(ctx, profileName, settings)
 	obj := c.object("lease.json")
 	var current leaseRecord
 	exists, gen, err := loadJSON(ctx, obj, &current)
@@ -627,7 +667,7 @@ func (c *Client) uploadVersion(ctx context.Context, archivePath, versionID strin
 	return n, hash, nil
 }
 
-func Prepare(ctx context.Context, profileName, profilePath string, cfg *bridge.ProfileCloudConfig) (*Session, error) {
+func Prepare(ctx context.Context, profileName, profilePath string, cfg *bridge.ProfileCloudConfig, settings *bridge.ProfileBackendPinchTab) (*Session, error) {
 	cfg = normalizeConfig(cfg)
 	client, err := New(ctx, cfg)
 	if err != nil {
@@ -637,7 +677,7 @@ func Prepare(ctx context.Context, profileName, profilePath string, cfg *bridge.P
 	if err := os.MkdirAll(profilePath, 0755); err != nil {
 		return nil, err
 	}
-	lease, err := client.AcquireLease(ctx, profileName)
+	lease, err := client.AcquireLease(ctx, profileName, settings)
 	if err != nil {
 		return nil, err
 	}
@@ -826,4 +866,56 @@ func Status(ctx context.Context, profilePath string, cfg *bridge.ProfileCloudCon
 		status.State = "error"
 	}
 	return status, nil
+}
+
+func Discover(ctx context.Context, cfg *bridge.ProfileCloudConfig) ([]DiscoveredProfile, error) {
+	cfg = normalizeConfig(cfg)
+	client, err := New(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = client.Close() }()
+
+	prefix := strings.Trim(cfg.Prefix, "/") + "/"
+	it := client.bucket.Objects(ctx, &storage.Query{Prefix: prefix})
+	var profiles []DiscoveredProfile
+	for {
+		attrs, err := it.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if !strings.HasSuffix(attrs.Name, "/meta.json") {
+			continue
+		}
+		obj := client.bucket.Object(attrs.Name)
+		var meta remoteMeta
+		ok, _, err := loadJSON(ctx, obj, &meta)
+		if err != nil || !ok {
+			if err != nil {
+				return nil, err
+			}
+			continue
+		}
+		profiles = append(profiles, DiscoveredProfile{
+			ProfileID:      meta.ProfileID,
+			Name:           meta.Name,
+			UpdatedAt:      meta.UpdatedAt,
+			ProxyURL:       meta.ProxyURL,
+			Timezone:       meta.Timezone,
+			Locale:         meta.Locale,
+			Binary:         meta.Binary,
+			BrowserVersion: meta.BrowserVersion,
+			LaunchArgs:     append([]string(nil), meta.LaunchArgs...),
+		})
+	}
+	sort.Slice(profiles, func(i, j int) bool {
+		if profiles[i].UpdatedAt.Equal(profiles[j].UpdatedAt) {
+			return profiles[i].Name < profiles[j].Name
+		}
+		return profiles[i].UpdatedAt.After(profiles[j].UpdatedAt)
+	})
+	return profiles, nil
 }

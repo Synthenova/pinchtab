@@ -11,6 +11,7 @@ import (
 
 	"github.com/pinchtab/pinchtab/internal/authn"
 	"github.com/pinchtab/pinchtab/internal/bridge"
+	"github.com/pinchtab/pinchtab/internal/cloudprofiles"
 	"github.com/pinchtab/pinchtab/internal/httpx"
 )
 
@@ -177,6 +178,8 @@ func (pm *ProfileManager) RegisterHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("POST /profiles", pm.handleCreate)
 	mux.HandleFunc("POST /profiles/create", pm.handleCreate)
 	mux.HandleFunc("GET /profiles/{id}", pm.handleGetByID)
+	mux.HandleFunc("POST /profiles/cloud/discover", pm.handleCloudDiscover)
+	mux.HandleFunc("POST /profiles/cloud/import", pm.handleCloudImport)
 
 	mux.HandleFunc("POST /profiles/export", pm.handleExport)
 	mux.HandleFunc("POST /profiles/import", pm.handleImport)
@@ -187,6 +190,109 @@ func (pm *ProfileManager) RegisterHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("GET /profiles/{id}/analytics", pm.handleAnalyticsByIDOrName)
 	mux.HandleFunc("DELETE /profiles/{id}", pm.handleDeleteByID)
 	mux.HandleFunc("PATCH /profiles/{id}", pm.handleUpdateByID)
+}
+
+func (pm *ProfileManager) handleCloudDiscover(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Bucket         string `json:"bucket"`
+		Prefix         string `json:"prefix"`
+		CredentialPath string `json:"credentialPath"`
+	}
+	if err := httpx.DecodeJSONBody(w, r, 0, &req); err != nil {
+		httpx.Error(w, httpx.StatusForJSONDecodeError(err), err)
+		return
+	}
+	enabled := true
+	results, err := cloudprofiles.Discover(r.Context(), &bridge.ProfileCloudConfig{
+		Enabled:        &enabled,
+		Provider:       "gcs",
+		Bucket:         req.Bucket,
+		Prefix:         req.Prefix,
+		CredentialPath: req.CredentialPath,
+	})
+	if err != nil {
+		httpx.Error(w, 500, err)
+		return
+	}
+	httpx.JSON(w, 200, map[string]any{"profiles": results})
+}
+
+func (pm *ProfileManager) handleCloudImport(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name           string `json:"name,omitempty"`
+		Bucket         string `json:"bucket"`
+		Prefix         string `json:"prefix"`
+		CredentialPath string `json:"credentialPath"`
+		ProfileID      string `json:"profileId"`
+		KeepLocalCache *bool  `json:"keepLocalCache,omitempty"`
+	}
+	if err := httpx.DecodeJSONBody(w, r, 0, &req); err != nil {
+		httpx.Error(w, httpx.StatusForJSONDecodeError(err), err)
+		return
+	}
+	enabled := true
+	results, err := cloudprofiles.Discover(r.Context(), &bridge.ProfileCloudConfig{
+		Enabled:        &enabled,
+		Provider:       "gcs",
+		Bucket:         req.Bucket,
+		Prefix:         req.Prefix,
+		CredentialPath: req.CredentialPath,
+	})
+	if err != nil {
+		httpx.Error(w, 500, err)
+		return
+	}
+	var selected *cloudprofiles.DiscoveredProfile
+	for i := range results {
+		if strings.TrimSpace(results[i].ProfileID) == strings.TrimSpace(req.ProfileID) {
+			selected = &results[i]
+			break
+		}
+	}
+	if selected == nil {
+		httpx.Error(w, 404, fmt.Errorf("cloud profile %q not found", req.ProfileID))
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		name = strings.TrimSpace(selected.Name)
+	}
+	if name == "" {
+		name = selected.ProfileID
+	}
+	keepLocal := true
+	if req.KeepLocalCache != nil {
+		keepLocal = *req.KeepLocalCache
+	}
+	meta := ProfileMeta{
+		Name: name,
+		Backend: &bridge.ProfileBackend{
+			Kind: "pinchtab",
+			PinchTab: &bridge.ProfileBackendPinchTab{
+				ProxyURL:       selected.ProxyURL,
+				Timezone:       selected.Timezone,
+				Locale:         selected.Locale,
+				Binary:         selected.Binary,
+				BrowserVersion: selected.BrowserVersion,
+				LaunchArgs:     append([]string(nil), selected.LaunchArgs...),
+				Cloud: &bridge.ProfileCloudConfig{
+					Enabled:        &enabled,
+					Provider:       "gcs",
+					Bucket:         req.Bucket,
+					Prefix:         req.Prefix,
+					ProfileID:      selected.ProfileID,
+					CredentialPath: req.CredentialPath,
+					KeepLocalCache: &keepLocal,
+				},
+			},
+		},
+	}
+	if err := pm.CreateWithMeta(name, meta); err != nil {
+		httpx.Error(w, profileMutationStatus(err), err)
+		return
+	}
+	authn.AuditLog(r, "profile.cloud_imported", "profileName", name, "cloudProfileId", selected.ProfileID)
+	httpx.JSON(w, 201, map[string]any{"status": "imported", "name": name})
 }
 
 func (pm *ProfileManager) handleList(w http.ResponseWriter, r *http.Request) {

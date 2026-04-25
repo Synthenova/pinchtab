@@ -515,7 +515,7 @@ func (o *Orchestrator) LaunchWithOptions(name, port string, headless bool, exten
 			if session, _ := cloudprofiles.ConsumePreparedSession(profilePath, backend.PinchTab.Cloud); session != nil {
 				cloudSession = session
 			} else {
-				status, err := cloudprofiles.StartSync(context.Background(), name, profilePath, backend.PinchTab.Cloud)
+				status, err := cloudprofiles.StartSync(context.Background(), name, profilePath, backend.PinchTab.Cloud, backend.PinchTab)
 				if err != nil {
 					if browserProxy != nil {
 						_ = browserProxy.Close()

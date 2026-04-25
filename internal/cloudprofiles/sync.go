@@ -199,7 +199,7 @@ func hasPathPrefix(target, dest string) bool {
 	return strings.HasPrefix(cleanTarget, cleanDest+string(os.PathSeparator))
 }
 
-func prepareWithProgress(ctx context.Context, profileName, profilePath string, cfg *bridge.ProfileCloudConfig, setStatus func(state string, done, total int64), setError func(string), setVersions func(localVersion, remoteVersion string)) (*Session, error) {
+func prepareWithProgress(ctx context.Context, profileName, profilePath string, cfg *bridge.ProfileCloudConfig, settings *bridge.ProfileBackendPinchTab, setStatus func(state string, done, total int64), setError func(string), setVersions func(localVersion, remoteVersion string)) (*Session, error) {
 	cfg = normalizeConfig(cfg)
 	client, err := New(ctx, cfg)
 	if err != nil {
@@ -210,7 +210,7 @@ func prepareWithProgress(ctx context.Context, profileName, profilePath string, c
 		return nil, err
 	}
 	setStatus("checking", 0, 0)
-	lease, err := client.AcquireLease(ctx, profileName)
+	lease, err := client.AcquireLease(ctx, profileName, settings)
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +274,7 @@ func prepareWithProgress(ctx context.Context, profileName, profilePath string, c
 	}, nil
 }
 
-func StartSync(ctx context.Context, profileName, profilePath string, cfg *bridge.ProfileCloudConfig) (*SyncStatus, error) {
+func StartSync(ctx context.Context, profileName, profilePath string, cfg *bridge.ProfileCloudConfig, settings *bridge.ProfileBackendPinchTab) (*SyncStatus, error) {
 	cfg = normalizeConfig(cfg)
 	if !Enabled(cfg) {
 		return &SyncStatus{State: "disabled"}, nil
@@ -304,7 +304,7 @@ func StartSync(ctx context.Context, profileName, profilePath string, cfg *bridge
 	syncMu.Unlock()
 
 	go func() {
-		session, err := prepareWithProgress(context.Background(), profileName, profilePath, cfg,
+		session, err := prepareWithProgress(context.Background(), profileName, profilePath, cfg, settings,
 			func(state string, done, total int64) {
 				updateJobStatus(job, func(status *SyncStatus) {
 					status.State = state
