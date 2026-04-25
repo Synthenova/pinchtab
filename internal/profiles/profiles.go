@@ -305,6 +305,7 @@ func normalizeProfileBackend(backend *bridge.ProfileBackend) *bridge.ProfileBack
 		normalized.Cloak.Locale = strings.TrimSpace(normalized.Cloak.Locale)
 		normalized.Cloak.Platform = strings.TrimSpace(normalized.Cloak.Platform)
 		normalized.Cloak.UserAgent = strings.TrimSpace(normalized.Cloak.UserAgent)
+		normalized.Cloak.LaunchArgs = normalizeStringList(normalized.Cloak.LaunchArgs)
 		normalized.Cloak.Notes = strings.TrimSpace(normalized.Cloak.Notes)
 		normalized.Steel = nil
 		normalized.PinchTab = nil
@@ -957,6 +958,18 @@ func (pm *ProfileManager) UpdateMeta(name string, meta map[string]string) error 
 			existing.Backend.Cloak = &bridge.ProfileBackendCloak{}
 		}
 		existing.Backend.Cloak.GeoIP = parseOptionalBool(backendGeoIP)
+		if existing.Backend.Kind == "" {
+			existing.Backend.Kind = "cloak"
+		}
+	}
+	if backendLaunchArgs, ok := meta["backend.cloak.launchArgs"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		if existing.Backend.Cloak == nil {
+			existing.Backend.Cloak = &bridge.ProfileBackendCloak{}
+		}
+		existing.Backend.Cloak.LaunchArgs = normalizeStringList(strings.Split(backendLaunchArgs, ","))
 		if existing.Backend.Kind == "" {
 			existing.Backend.Kind = "cloak"
 		}

@@ -167,6 +167,9 @@ func applyBackendPayload(payload map[string]any, backend *bridge.ProfileBackendC
 	if v := strings.TrimSpace(backend.UserAgent); v != "" {
 		payload["user_agent"] = v
 	}
+	if len(backend.LaunchArgs) > 0 {
+		payload["launch_args"] = backend.LaunchArgs
+	}
 	if backend.Headless != nil {
 		payload["headless"] = *backend.Headless
 	}

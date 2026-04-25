@@ -616,6 +616,62 @@ func TestProfileUpdateMetaPinchTab(t *testing.T) {
 	}
 }
 
+func TestProfileUpdateMetaCloakLaunchArgs(t *testing.T) {
+	pm := NewProfileManager(t.TempDir())
+	mux := http.NewServeMux()
+	pm.RegisterHandlers(mux)
+
+	_ = pm.Create("cloaky")
+
+	body := `{"name":"cloaky","backend":{"kind":"cloak","cloak":{"baseUrl":"http://127.0.0.1:8080","launchArgs":["--fingerprint=42069"," --fingerprint-storage-quota=5000 "]}}}`
+	req := httptest.NewRequest("PATCH", "/profiles/meta", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	profiles, err := pm.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("expected 1 profile, got %d", len(profiles))
+	}
+	if profiles[0].Backend == nil || profiles[0].Backend.Cloak == nil {
+		t.Fatalf("expected cloak backend after update, got %#v", profiles[0].Backend)
+	}
+	if !reflect.DeepEqual([]string{"--fingerprint=42069", "--fingerprint-storage-quota=5000"}, profiles[0].Backend.Cloak.LaunchArgs) {
+		t.Errorf("expected cloak launch args to update, got %#v", profiles[0].Backend.Cloak.LaunchArgs)
+	}
+}
+
+func TestProfileUpdateByIDPreservesCloakProfileIDWhenOmitted(t *testing.T) {
+	var req struct {
+		Backend *bridge.ProfileBackend `json:"backend"`
+	}
+	body := `{"backend":{"kind":"cloak","cloak":{"baseUrl":"http://127.0.0.1:8080","proxyUrl":"http://proxy.local:9999","launchArgs":["--fingerprint=42069"]}}}`
+	if err := json.Unmarshal([]byte(body), &req); err != nil {
+		t.Fatal(err)
+	}
+
+	updates := make(map[string]string)
+	if req.Backend != nil && req.Backend.Cloak != nil {
+		updates["backend.cloak.baseUrl"] = req.Backend.Cloak.BaseURL
+		if strings.TrimSpace(req.Backend.Cloak.ProfileID) != "" {
+			updates["backend.cloak.profileId"] = req.Backend.Cloak.ProfileID
+		}
+		updates["backend.cloak.proxyUrl"] = req.Backend.Cloak.ProxyURL
+		updates["backend.cloak.launchArgs"] = encodeProfileStringList(req.Backend.Cloak.LaunchArgs)
+	}
+
+	if _, ok := updates["backend.cloak.profileId"]; ok {
+		t.Fatal("expected PATCH handler logic to omit blank cloak profileId")
+	}
+}
+
 func TestProfileUpdateMetaRejectsInvalidProfileName(t *testing.T) {
 	pm := NewProfileManager(t.TempDir())
 	mux := http.NewServeMux()

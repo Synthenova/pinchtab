@@ -12,17 +12,18 @@ type ProfileBackendSteel struct {
 
 // ProfileBackendCloak mirrors the Cloak-specific backend settings for a profile.
 type ProfileBackendCloak struct {
-	BaseURL   string `json:"baseUrl,omitempty"`
-	ProfileID string `json:"profileId,omitempty"`
-	ProxyURL  string `json:"proxyUrl,omitempty"`
-	Timezone  string `json:"timezone,omitempty"`
-	Locale    string `json:"locale,omitempty"`
-	Platform  string `json:"platform,omitempty"`
-	UserAgent string `json:"userAgent,omitempty"`
-	Headless  *bool  `json:"headless,omitempty"`
-	Humanize  *bool  `json:"humanize,omitempty"`
-	GeoIP     *bool  `json:"geoip,omitempty"`
-	Notes     string `json:"notes,omitempty"`
+	BaseURL    string   `json:"baseUrl,omitempty"`
+	ProfileID  string   `json:"profileId,omitempty"`
+	ProxyURL   string   `json:"proxyUrl,omitempty"`
+	Timezone   string   `json:"timezone,omitempty"`
+	Locale     string   `json:"locale,omitempty"`
+	Platform   string   `json:"platform,omitempty"`
+	UserAgent  string   `json:"userAgent,omitempty"`
+	LaunchArgs []string `json:"launchArgs,omitempty"`
+	Headless   *bool    `json:"headless,omitempty"`
+	Humanize   *bool    `json:"humanize,omitempty"`
+	GeoIP      *bool    `json:"geoip,omitempty"`
+	Notes      string   `json:"notes,omitempty"`
 }
 
 // ProfileBackendPinchTab mirrors the PinchTab-specific backend settings for a profile.

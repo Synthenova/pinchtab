@@ -177,12 +177,15 @@ func (pm *ProfileManager) handleUpdateMeta(w http.ResponseWriter, r *http.Reques
 	if req.Backend != nil {
 		if req.Backend.Cloak != nil {
 			updates["backend.cloak.baseUrl"] = req.Backend.Cloak.BaseURL
-			updates["backend.cloak.profileId"] = req.Backend.Cloak.ProfileID
+			if strings.TrimSpace(req.Backend.Cloak.ProfileID) != "" {
+				updates["backend.cloak.profileId"] = req.Backend.Cloak.ProfileID
+			}
 			updates["backend.cloak.proxyUrl"] = req.Backend.Cloak.ProxyURL
 			updates["backend.cloak.timezone"] = req.Backend.Cloak.Timezone
 			updates["backend.cloak.locale"] = req.Backend.Cloak.Locale
 			updates["backend.cloak.platform"] = req.Backend.Cloak.Platform
 			updates["backend.cloak.userAgent"] = req.Backend.Cloak.UserAgent
+			updates["backend.cloak.launchArgs"] = encodeProfileStringList(req.Backend.Cloak.LaunchArgs)
 			updates["backend.cloak.notes"] = req.Backend.Cloak.Notes
 			updates["backend.cloak.headless"] = formatOptionalBool(req.Backend.Cloak.Headless)
 			updates["backend.cloak.humanize"] = formatOptionalBool(req.Backend.Cloak.Humanize)
@@ -331,12 +334,15 @@ func (pm *ProfileManager) handleUpdateByID(w http.ResponseWriter, r *http.Reques
 		updates["backend.kind"] = req.Backend.Kind
 		if req.Backend.Cloak != nil {
 			updates["backend.cloak.baseUrl"] = req.Backend.Cloak.BaseURL
-			updates["backend.cloak.profileId"] = req.Backend.Cloak.ProfileID
+			if strings.TrimSpace(req.Backend.Cloak.ProfileID) != "" {
+				updates["backend.cloak.profileId"] = req.Backend.Cloak.ProfileID
+			}
 			updates["backend.cloak.proxyUrl"] = req.Backend.Cloak.ProxyURL
 			updates["backend.cloak.timezone"] = req.Backend.Cloak.Timezone
 			updates["backend.cloak.locale"] = req.Backend.Cloak.Locale
 			updates["backend.cloak.platform"] = req.Backend.Cloak.Platform
 			updates["backend.cloak.userAgent"] = req.Backend.Cloak.UserAgent
+			updates["backend.cloak.launchArgs"] = encodeProfileStringList(req.Backend.Cloak.LaunchArgs)
 			updates["backend.cloak.notes"] = req.Backend.Cloak.Notes
 			updates["backend.cloak.headless"] = formatOptionalBool(req.Backend.Cloak.Headless)
 			updates["backend.cloak.humanize"] = formatOptionalBool(req.Backend.Cloak.Humanize)
