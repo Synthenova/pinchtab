@@ -323,7 +323,11 @@ func normalizeProfileBackend(backend *bridge.ProfileBackend) *bridge.ProfileBack
 		}
 		normalized.PinchTab.ProxyURL = strings.TrimSpace(normalized.PinchTab.ProxyURL)
 		normalized.PinchTab.Timezone = strings.TrimSpace(normalized.PinchTab.Timezone)
-		if normalized.PinchTab.ProxyURL == "" && normalized.PinchTab.Timezone == "" {
+		normalized.PinchTab.Locale = strings.TrimSpace(normalized.PinchTab.Locale)
+		normalized.PinchTab.Binary = strings.TrimSpace(normalized.PinchTab.Binary)
+		normalized.PinchTab.BrowserVersion = strings.TrimSpace(normalized.PinchTab.BrowserVersion)
+		normalized.PinchTab.LaunchArgs = normalizeStringList(normalized.PinchTab.LaunchArgs)
+		if normalized.PinchTab.ProxyURL == "" && normalized.PinchTab.Timezone == "" && normalized.PinchTab.Locale == "" && normalized.PinchTab.Binary == "" && normalized.PinchTab.BrowserVersion == "" && len(normalized.PinchTab.LaunchArgs) == 0 {
 			normalized.PinchTab = nil
 		}
 		normalized.Steel = nil
@@ -773,6 +777,54 @@ func (pm *ProfileManager) UpdateMeta(name string, meta map[string]string) error 
 			existing.Backend.PinchTab = &bridge.ProfileBackendPinchTab{}
 		}
 		existing.Backend.PinchTab.Timezone = backendTimezone
+		if existing.Backend.Kind == "" {
+			existing.Backend.Kind = "pinchtab"
+		}
+	}
+	if backendLocale, ok := meta["backend.pinchtab.locale"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		if existing.Backend.PinchTab == nil {
+			existing.Backend.PinchTab = &bridge.ProfileBackendPinchTab{}
+		}
+		existing.Backend.PinchTab.Locale = backendLocale
+		if existing.Backend.Kind == "" {
+			existing.Backend.Kind = "pinchtab"
+		}
+	}
+	if backendBinary, ok := meta["backend.pinchtab.binary"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		if existing.Backend.PinchTab == nil {
+			existing.Backend.PinchTab = &bridge.ProfileBackendPinchTab{}
+		}
+		existing.Backend.PinchTab.Binary = backendBinary
+		if existing.Backend.Kind == "" {
+			existing.Backend.Kind = "pinchtab"
+		}
+	}
+	if backendBrowserVersion, ok := meta["backend.pinchtab.browserVersion"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		if existing.Backend.PinchTab == nil {
+			existing.Backend.PinchTab = &bridge.ProfileBackendPinchTab{}
+		}
+		existing.Backend.PinchTab.BrowserVersion = backendBrowserVersion
+		if existing.Backend.Kind == "" {
+			existing.Backend.Kind = "pinchtab"
+		}
+	}
+	if backendLaunchArgs, ok := meta["backend.pinchtab.launchArgs"]; ok {
+		if existing.Backend == nil {
+			existing.Backend = &bridge.ProfileBackend{}
+		}
+		if existing.Backend.PinchTab == nil {
+			existing.Backend.PinchTab = &bridge.ProfileBackendPinchTab{}
+		}
+		existing.Backend.PinchTab.LaunchArgs = normalizeStringList(strings.Split(backendLaunchArgs, ","))
 		if existing.Backend.Kind == "" {
 			existing.Backend.Kind = "pinchtab"
 		}

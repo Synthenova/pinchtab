@@ -23,7 +23,7 @@ func BuildLaunchContract(cfg *config.RuntimeConfig, level Level) LaunchContract 
 		"--disable-blink-features=AutomationControlled",
 		"--enable-network-information-downlink-max",
 	}
-	if persona.UserAgent != "" {
+	if persona.UserAgent != "" && !UseNativeUserAgent(cfg) {
 		args = append(args, "--user-agent="+persona.UserAgent)
 	}
 	if persona.Language != "" {

@@ -15,17 +15,38 @@ export interface ProfileBackendSteel {
   extensionPaths?: string[];
 }
 /**
+ * ProfileBackendCloak mirrors the Cloak-specific backend settings for a profile.
+ */
+export interface ProfileBackendCloak {
+  baseUrl?: string;
+  profileId?: string;
+  proxyUrl?: string;
+  timezone?: string;
+  locale?: string;
+  platform?: string;
+  userAgent?: string;
+  headless?: boolean;
+  humanize?: boolean;
+  geoip?: boolean;
+  notes?: string;
+}
+/**
  * ProfileBackendPinchTab mirrors the PinchTab-specific backend settings for a profile.
  */
 export interface ProfileBackendPinchTab {
   proxyUrl?: string;
   timezone?: string;
+  locale?: string;
+  binary?: string;
+  browserVersion?: string;
+  launchArgs?: string[];
 }
 /**
  * ProfileBackend describes which browser runtime backs a profile.
  */
 export interface ProfileBackend {
   kind?: string;
+  cloak?: ProfileBackendCloak;
   steel?: ProfileBackendSteel;
   pinchtab?: ProfileBackendPinchTab;
 }

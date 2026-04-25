@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -270,23 +271,41 @@ func (o *Orchestrator) resolveSteelLaunchDefaults(profileName, proxyURL string, 
 	return resolvedProxy, resolvedExtensions
 }
 
-func (o *Orchestrator) resolvePinchTabLaunchDefaults(profileName, proxyURL, timezone string) (string, string) {
+type pinchTabLaunchDefaults struct {
+	ProxyURL       string
+	Timezone       string
+	Locale         string
+	Binary         string
+	BrowserVersion string
+	LaunchArgs     []string
+}
+
+func (o *Orchestrator) resolvePinchTabLaunchDefaults(profileName, proxyURL, timezone string) pinchTabLaunchDefaults {
 	backend := o.profileBackend(profileName)
+	resolved := pinchTabLaunchDefaults{
+		ProxyURL: strings.TrimSpace(proxyURL),
+		Timezone: strings.TrimSpace(timezone),
+	}
 	if backend == nil || backend.Kind != "pinchtab" {
-		return strings.TrimSpace(proxyURL), strings.TrimSpace(timezone)
+		return resolved
 	}
 
-	resolvedProxy := strings.TrimSpace(proxyURL)
-	resolvedTimezone := strings.TrimSpace(timezone)
 	if backend.PinchTab != nil {
-		if resolvedProxy == "" {
-			resolvedProxy = strings.TrimSpace(backend.PinchTab.ProxyURL)
+		if resolved.ProxyURL == "" {
+			resolved.ProxyURL = strings.TrimSpace(backend.PinchTab.ProxyURL)
 		}
-		if resolvedTimezone == "" {
-			resolvedTimezone = strings.TrimSpace(backend.PinchTab.Timezone)
+		if resolved.Timezone == "" {
+			resolved.Timezone = strings.TrimSpace(backend.PinchTab.Timezone)
 		}
+		resolved.Locale = strings.TrimSpace(backend.PinchTab.Locale)
+		resolved.Binary = strings.TrimSpace(backend.PinchTab.Binary)
+		resolved.BrowserVersion = strings.TrimSpace(backend.PinchTab.BrowserVersion)
+		if resolved.BrowserVersion == "" {
+			resolved.BrowserVersion = inferBrowserVersionFromBinary(resolved.Binary)
+		}
+		resolved.LaunchArgs = normalizeLaunchArgs(backend.PinchTab.LaunchArgs)
 	}
-	return resolvedProxy, resolvedTimezone
+	return resolved
 }
 
 func (o *Orchestrator) resolveCloakLaunchDefaults(profileName string) *bridge.ProfileBackendCloak {
@@ -406,6 +425,10 @@ func (o *Orchestrator) LaunchWithOptions(name, port string, headless bool, exten
 	cloakProfileID := ""
 	pinchTabProxyURL := ""
 	pinchTabTimezone := ""
+	pinchTabLocale := ""
+	pinchTabBinary := ""
+	pinchTabBrowserVersion := ""
+	var pinchTabLaunchArgs []string
 	backendKind := "pinchtab"
 	var browserProxy *browserproxy.Server
 	launchSucceeded := false
@@ -465,7 +488,13 @@ func (o *Orchestrator) LaunchWithOptions(name, port string, headless bool, exten
 		externalBrowserWSURL = session.BrowserWSEndpoint
 		steelSessionID = session.ID
 	} else {
-		pinchTabProxyURL, pinchTabTimezone = o.resolvePinchTabLaunchDefaults(name, "", "")
+		pinchTabDefaults := o.resolvePinchTabLaunchDefaults(name, "", "")
+		pinchTabProxyURL = pinchTabDefaults.ProxyURL
+		pinchTabTimezone = pinchTabDefaults.Timezone
+		pinchTabLocale = pinchTabDefaults.Locale
+		pinchTabBinary = pinchTabDefaults.Binary
+		pinchTabBrowserVersion = pinchTabDefaults.BrowserVersion
+		pinchTabLaunchArgs = pinchTabDefaults.LaunchArgs
 		if strings.TrimSpace(pinchTabProxyURL) != "" {
 			proxyServer, err := browserproxy.Start(pinchTabProxyURL)
 			if err != nil {
@@ -483,7 +512,7 @@ func (o *Orchestrator) LaunchWithOptions(name, port string, headless bool, exten
 		return nil, fmt.Errorf("create state dir: %w", err)
 	}
 
-	childConfigPath, err := o.writeChildConfig(port, cdpPort, profilePath, instanceStateDir, headless, extensionPaths, externalBrowserWSURL, pinchTabProxyURL, pinchTabTimezone)
+	childConfigPath, err := o.writeChildConfig(port, cdpPort, profilePath, instanceStateDir, headless, extensionPaths, externalBrowserWSURL, pinchTabProxyURL, pinchTabTimezone, pinchTabLocale, pinchTabBinary, pinchTabBrowserVersion, pinchTabLaunchArgs)
 	if err != nil {
 		return nil, fmt.Errorf("write child config: %w", err)
 	}
@@ -560,7 +589,7 @@ func mergeExtensionPaths(primary []string, secondary []string) []string {
 	return merged
 }
 
-func (o *Orchestrator) writeChildConfig(port string, cdpPort int, profilePath, instanceStateDir string, headless bool, extensionPaths []string, externalBrowserWSURL, proxyURL, timezone string) (string, error) {
+func (o *Orchestrator) writeChildConfig(port string, cdpPort int, profilePath, instanceStateDir string, headless bool, extensionPaths []string, externalBrowserWSURL, proxyURL, timezone, locale, binary, browserVersion string, launchArgs []string) (string, error) {
 	fc := config.FileConfigFromRuntime(o.runtimeCfg)
 	fc.Server.Port = port
 	fc.Server.StateDir = instanceStateDir
@@ -575,6 +604,15 @@ func (o *Orchestrator) writeChildConfig(port string, cdpPort int, profilePath, i
 	}
 	if strings.TrimSpace(timezone) != "" {
 		fc.InstanceDefaults.Timezone = strings.TrimSpace(timezone)
+	}
+	if strings.TrimSpace(binary) != "" {
+		fc.Browser.ChromeBinary = strings.TrimSpace(binary)
+	}
+	if strings.TrimSpace(browserVersion) != "" {
+		fc.Browser.ChromeVersion = strings.TrimSpace(browserVersion)
+	}
+	if extraFlags := buildProfileExtraFlags(fc.Browser.ChromeExtraFlags, strings.TrimSpace(timezone), strings.TrimSpace(locale), launchArgs); extraFlags != "" {
+		fc.Browser.ChromeExtraFlags = extraFlags
 	}
 	if headless {
 		fc.InstanceDefaults.Mode = "headless"
@@ -609,6 +647,49 @@ func (o *Orchestrator) writeChildConfig(port string, cdpPort int, profilePath, i
 		return "", err
 	}
 	return configPath, nil
+}
+
+func normalizeLaunchArgs(args []string) []string {
+	if len(args) == 0 {
+		return nil
+	}
+	normalized := make([]string, 0, len(args))
+	for _, arg := range args {
+		trimmed := strings.TrimSpace(arg)
+		if trimmed == "" {
+			continue
+		}
+		normalized = append(normalized, trimmed)
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
+}
+
+func buildProfileExtraFlags(base, timezone, locale string, launchArgs []string) string {
+	flags := make([]string, 0, len(launchArgs)+3)
+	if strings.TrimSpace(base) != "" {
+		flags = append(flags, strings.Fields(base)...)
+	}
+	if timezone != "" {
+		flags = append(flags, "--fingerprint-timezone="+timezone)
+	}
+	if locale != "" {
+		flags = append(flags, "--lang="+locale, "--fingerprint-locale="+locale)
+	}
+	flags = append(flags, normalizeLaunchArgs(launchArgs)...)
+	return config.SanitizeChromeExtraFlags(strings.Join(flags, " "))
+}
+
+var cloakBinaryVersionPattern = regexp.MustCompile(`(?:^|[/\\])chromium-(\d+\.\d+\.\d+\.\d+)(?:\.\d+)?(?:[/\\]|$)`)
+
+func inferBrowserVersionFromBinary(binary string) string {
+	matches := cloakBinaryVersionPattern.FindStringSubmatch(strings.TrimSpace(binary))
+	if len(matches) < 2 {
+		return ""
+	}
+	return matches[1]
 }
 
 func intPtr(v int) *int {

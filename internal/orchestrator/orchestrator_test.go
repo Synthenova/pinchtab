@@ -292,8 +292,11 @@ func TestOrchestrator_Launch_PinchtabProxyUsesLocalWrapper(t *testing.T) {
 		Backend: &bridge.ProfileBackend{
 			Kind: "pinchtab",
 			PinchTab: &bridge.ProfileBackendPinchTab{
-				ProxyURL: "http://proxy.local:3128",
-				Timezone: "Asia/Kolkata",
+				ProxyURL:   "http://proxy.local:3128",
+				Timezone:   "Asia/Kolkata",
+				Locale:     "en-IN",
+				Binary:     "/Users/test/.cloakbrowser/chromium-145.0.7632.109.2/Chromium.app/Contents/MacOS/Chromium",
+				LaunchArgs: []string{"--fingerprint=42069", "--fingerprint-storage-quota=5000", "--remote-debugging-port=9222"},
 			},
 		},
 	}); err != nil {
@@ -332,10 +335,56 @@ func TestOrchestrator_Launch_PinchtabProxyUsesLocalWrapper(t *testing.T) {
 	if fc.InstanceDefaults.Timezone != "Asia/Kolkata" {
 		t.Fatalf("child timezone = %q, want %q", fc.InstanceDefaults.Timezone, "Asia/Kolkata")
 	}
+	if fc.Browser.ChromeBinary != "/Users/test/.cloakbrowser/chromium-145.0.7632.109.2/Chromium.app/Contents/MacOS/Chromium" {
+		t.Fatalf("child binary = %q, want cloak chromium", fc.Browser.ChromeBinary)
+	}
+	if fc.Browser.ChromeVersion != "145.0.7632.109" {
+		t.Fatalf("child browser version = %q, want 145.0.7632.109", fc.Browser.ChromeVersion)
+	}
+	for _, want := range []string{"--fingerprint-timezone=Asia/Kolkata", "--lang=en-IN", "--fingerprint-locale=en-IN", "--fingerprint=42069", "--fingerprint-storage-quota=5000"} {
+		if !strings.Contains(fc.Browser.ChromeExtraFlags, want) {
+			t.Fatalf("child extraFlags = %q, missing %q", fc.Browser.ChromeExtraFlags, want)
+		}
+	}
+	if strings.Contains(fc.Browser.ChromeExtraFlags, "--remote-debugging-port=9222") {
+		t.Fatalf("child extraFlags = %q, should not include reserved debug port", fc.Browser.ChromeExtraFlags)
+	}
 
 	processAliveFunc = func(pid int) bool { return false }
 	if err := o.Stop(inst.ID); err != nil {
 		t.Fatalf("Stop failed: %v", err)
+	}
+}
+
+func TestInferBrowserVersionFromBinary(t *testing.T) {
+	tests := []struct {
+		name   string
+		binary string
+		want   string
+	}{
+		{
+			name:   "cloak mac app path",
+			binary: "/Users/test/.cloakbrowser/chromium-145.0.7632.109.2/Chromium.app/Contents/MacOS/Chromium",
+			want:   "145.0.7632.109",
+		},
+		{
+			name:   "cloak linux path",
+			binary: "/home/test/.cloakbrowser/chromium-146.0.7680.177.3/chrome",
+			want:   "146.0.7680.177",
+		},
+		{
+			name:   "non cloak path",
+			binary: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+			want:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := inferBrowserVersionFromBinary(tt.binary); got != tt.want {
+				t.Fatalf("inferBrowserVersionFromBinary(%q) = %q, want %q", tt.binary, got, tt.want)
+			}
+		})
 	}
 }
 

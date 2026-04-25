@@ -142,3 +142,33 @@ func TestBuildLaunchContractOwnsStealthLaunchFlags(t *testing.T) {
 		t.Fatalf("expected stealth launch contract to own user-agent, got %v", launch.Args)
 	}
 }
+
+func TestBuildLaunchContractUsesNativeUAForCloakBinary(t *testing.T) {
+	launch := BuildLaunchContract(&config.RuntimeConfig{
+		ChromeVersion: "145.0.7632.109",
+		ChromeBinary:  "/Users/test/.cloakbrowser/chromium-145.0.7632.109.2/Chromium.app/Contents/MacOS/Chromium",
+	}, LevelLight)
+	if HasLaunchArgPrefix(launch.Args, "--user-agent=") {
+		t.Fatalf("expected cloak binary launch to keep native user-agent, got %v", launch.Args)
+	}
+}
+
+func TestBuildUserAgentClientHintHeaders(t *testing.T) {
+	headers := BuildUserAgentClientHintHeaders("", "145.0.7632.109")
+	got, ok := headers["Sec-CH-UA"].(string)
+	if !ok {
+		t.Fatalf("expected Sec-CH-UA header, got %#v", headers)
+	}
+	for _, want := range []string{`"Not:A-Brand";v="99"`, `"Google Chrome";v="145"`, `"Chromium";v="145"`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("Sec-CH-UA = %q, missing %q", got, want)
+		}
+	}
+	fullVersion, ok := headers["Sec-CH-UA-Full-Version-List"].(string)
+	if !ok {
+		t.Fatalf("expected Sec-CH-UA-Full-Version-List header, got %#v", headers)
+	}
+	if !strings.Contains(fullVersion, `"Google Chrome";v="145.0.7632.109"`) {
+		t.Fatalf("Sec-CH-UA-Full-Version-List = %q, missing full Chrome version", fullVersion)
+	}
+}

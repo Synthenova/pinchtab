@@ -196,6 +196,10 @@ func (pm *ProfileManager) handleUpdateMeta(w http.ResponseWriter, r *http.Reques
 		if req.Backend.PinchTab != nil {
 			updates["backend.pinchtab.proxyUrl"] = req.Backend.PinchTab.ProxyURL
 			updates["backend.pinchtab.timezone"] = req.Backend.PinchTab.Timezone
+			updates["backend.pinchtab.locale"] = req.Backend.PinchTab.Locale
+			updates["backend.pinchtab.binary"] = req.Backend.PinchTab.Binary
+			updates["backend.pinchtab.browserVersion"] = req.Backend.PinchTab.BrowserVersion
+			updates["backend.pinchtab.launchArgs"] = encodeProfileStringList(req.Backend.PinchTab.LaunchArgs)
 		}
 	}
 
@@ -345,6 +349,10 @@ func (pm *ProfileManager) handleUpdateByID(w http.ResponseWriter, r *http.Reques
 		if req.Backend.PinchTab != nil {
 			updates["backend.pinchtab.proxyUrl"] = req.Backend.PinchTab.ProxyURL
 			updates["backend.pinchtab.timezone"] = req.Backend.PinchTab.Timezone
+			updates["backend.pinchtab.locale"] = req.Backend.PinchTab.Locale
+			updates["backend.pinchtab.binary"] = req.Backend.PinchTab.Binary
+			updates["backend.pinchtab.browserVersion"] = req.Backend.PinchTab.BrowserVersion
+			updates["backend.pinchtab.launchArgs"] = encodeProfileStringList(req.Backend.PinchTab.LaunchArgs)
 		}
 	}
 	if len(updates) > 0 {

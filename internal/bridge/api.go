@@ -89,8 +89,12 @@ type ProfileBackendCloak struct {
 }
 
 type ProfileBackendPinchTab struct {
-	ProxyURL string `json:"proxyUrl,omitempty"`
-	Timezone string `json:"timezone,omitempty"`
+	ProxyURL       string   `json:"proxyUrl,omitempty"`
+	Timezone       string   `json:"timezone,omitempty"`
+	Locale         string   `json:"locale,omitempty"`
+	Binary         string   `json:"binary,omitempty"`
+	BrowserVersion string   `json:"browserVersion,omitempty"`
+	LaunchArgs     []string `json:"launchArgs,omitempty"`
 }
 
 type ProfileBackend struct {

@@ -494,8 +494,12 @@ func TestProfileMetaReadWritePinchTabBackend(t *testing.T) {
 		Backend: &bridge.ProfileBackend{
 			Kind: "pinchtab",
 			PinchTab: &bridge.ProfileBackendPinchTab{
-				ProxyURL: "http://proxy.local:3128",
-				Timezone: "Asia/Singapore",
+				ProxyURL:       "http://proxy.local:3128",
+				Timezone:       "Asia/Singapore",
+				Locale:         "en-SG",
+				Binary:         "/tmp/cloak-chromium",
+				BrowserVersion: "145.0.7632.109",
+				LaunchArgs:     []string{"--fingerprint=42069", " --fingerprint-storage-quota=5000 "},
 			},
 		},
 	}
@@ -515,6 +519,18 @@ func TestProfileMetaReadWritePinchTabBackend(t *testing.T) {
 	}
 	if got := readMeta.Backend.PinchTab.Timezone; got != "Asia/Singapore" {
 		t.Errorf("expected timezone to persist, got %q", got)
+	}
+	if got := readMeta.Backend.PinchTab.Locale; got != "en-SG" {
+		t.Errorf("expected locale to persist, got %q", got)
+	}
+	if got := readMeta.Backend.PinchTab.Binary; got != "/tmp/cloak-chromium" {
+		t.Errorf("expected binary to persist, got %q", got)
+	}
+	if got := readMeta.Backend.PinchTab.BrowserVersion; got != "145.0.7632.109" {
+		t.Errorf("expected browser version to persist, got %q", got)
+	}
+	if !reflect.DeepEqual([]string{"--fingerprint=42069", "--fingerprint-storage-quota=5000"}, readMeta.Backend.PinchTab.LaunchArgs) {
+		t.Errorf("expected launch args to persist, got %#v", readMeta.Backend.PinchTab.LaunchArgs)
 	}
 }
 
@@ -560,7 +576,7 @@ func TestProfileUpdateMetaPinchTab(t *testing.T) {
 
 	_ = pm.Create("personal")
 
-	body := `{"name":"personal","backend":{"kind":"pinchtab","pinchtab":{"proxyUrl":"http://proxy.local:3128","timezone":"Asia/Kolkata"}}}`
+	body := `{"name":"personal","backend":{"kind":"pinchtab","pinchtab":{"proxyUrl":"http://proxy.local:3128","timezone":"Asia/Kolkata","locale":"en-IN","binary":"/tmp/cloak-chromium","browserVersion":"145.0.7632.109","launchArgs":["--fingerprint=42069"," --fingerprint-storage-quota=5000 "]}}}`
 	req := httptest.NewRequest("PATCH", "/profiles/meta", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -585,6 +601,18 @@ func TestProfileUpdateMetaPinchTab(t *testing.T) {
 	}
 	if got := profiles[0].Backend.PinchTab.Timezone; got != "Asia/Kolkata" {
 		t.Errorf("expected timezone to update, got %q", got)
+	}
+	if got := profiles[0].Backend.PinchTab.Locale; got != "en-IN" {
+		t.Errorf("expected locale to update, got %q", got)
+	}
+	if got := profiles[0].Backend.PinchTab.Binary; got != "/tmp/cloak-chromium" {
+		t.Errorf("expected binary to update, got %q", got)
+	}
+	if got := profiles[0].Backend.PinchTab.BrowserVersion; got != "145.0.7632.109" {
+		t.Errorf("expected browser version to update, got %q", got)
+	}
+	if !reflect.DeepEqual([]string{"--fingerprint=42069", "--fingerprint-storage-quota=5000"}, profiles[0].Backend.PinchTab.LaunchArgs) {
+		t.Errorf("expected launch args to update, got %#v", profiles[0].Backend.PinchTab.LaunchArgs)
 	}
 }
 

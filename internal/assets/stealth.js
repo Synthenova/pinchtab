@@ -272,6 +272,51 @@ if (!window.chrome.runtime) {
   }
 })();
 
+// NAVIGATOR.USERAGENTDATA - keep Client Hints coherent when the browser exposes
+// native UA-CH with incomplete version fields.
+(function() {
+  if (!profileUserAgentData) return;
+
+  const nativeUAData = navigator.userAgentData;
+  if (nativeUAData) {
+    try {
+      const nativeBrands = Array.isArray(nativeUAData.brands) ? nativeUAData.brands : [];
+      const nativeVersionsComplete = nativeBrands.length > 0 && nativeBrands
+        .filter((brand) => brand && brand.brand !== 'Not:A-Brand' && brand.brand !== 'Not(A:Brand')
+        .every((brand) => typeof brand.version === 'string' && brand.version.length > 0);
+      if (nativeVersionsComplete) {
+        return;
+      }
+    } catch (e) {}
+  }
+
+  const brands = Array.isArray(profileUserAgentData.brands) ? profileUserAgentData.brands.map((brand) => ({ brand: brand.brand, version: brand.version })) : [];
+  const fullVersionList = Array.isArray(profileUserAgentData.fullVersionList) ? profileUserAgentData.fullVersionList.map((brand) => ({ brand: brand.brand, version: brand.version })) : [];
+  const userAgentData = {
+    brands: brands,
+    mobile: !!profileUserAgentData.mobile,
+    platform: profileUserAgentData.platform,
+    getHighEntropyValues: async function getHighEntropyValues(hints) {
+      const values = { brands: brands, mobile: !!profileUserAgentData.mobile, platform: profileUserAgentData.platform };
+      for (const hint of hints) {
+        if (hint === 'platformVersion') values.platformVersion = profileUserAgentData.platformVersion;
+        else if (hint === 'architecture') values.architecture = profileUserAgentData.architecture;
+        else if (hint === 'model') values.model = profileUserAgentData.model || '';
+        else if (hint === 'bitness') values.bitness = profileUserAgentData.bitness || '64';
+        else if (hint === 'uaFullVersion') values.uaFullVersion = (fullVersionList[1] && fullVersionList[1].version) || '';
+        else if (hint === 'fullVersionList') values.fullVersionList = fullVersionList;
+        else if (hint === 'wow64') values.wow64 = !!profileUserAgentData.wow64;
+      }
+      return values;
+    },
+    toJSON: function toJSON() { return { brands: this.brands, mobile: this.mobile, platform: this.platform }; }
+  };
+
+  userAgentData.getHighEntropyValues = wrapCallableAsNative(userAgentData.getHighEntropyValues, (target, thisArg, args) => Reflect.apply(target, thisArg, args));
+  userAgentData.toJSON = wrapCallableAsNative(userAgentData.toJSON, (target, thisArg, args) => Reflect.apply(target, thisArg, args));
+  definePrototypeGetter(navigatorProto, 'userAgentData', () => userAgentData);
+})();
+
 Object.defineProperty(navigator.connection || {}, 'rtt', {
   get: () => 50 + Math.floor(seededRandom(sessionSeed * 3) * 100),
   configurable: true

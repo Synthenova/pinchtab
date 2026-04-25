@@ -3,6 +3,8 @@ package stealth
 import (
 	goruntime "runtime"
 	"strings"
+
+	"github.com/pinchtab/pinchtab/internal/config"
 )
 
 type BrandVersion struct {
@@ -81,7 +83,7 @@ func BuildPersona(userAgent, chromeVersion string) BrowserPersona {
 	case strings.Contains(ua, "Macintosh"), strings.Contains(ua, "Mac OS X"):
 		navigatorPlatform = "MacIntel"
 		uaDataPlatform = "macOS"
-		platformVersion = "14.0.0"
+		platformVersion = "15.2.0"
 	}
 
 	architecture := "x86"
@@ -93,12 +95,12 @@ func BuildPersona(userAgent, chromeVersion string) BrowserPersona {
 	}
 
 	brands := []BrandVersion{
-		{Brand: "Not(A:Brand", Version: "99"},
+		{Brand: "Not:A-Brand", Version: "99"},
 		{Brand: "Google Chrome", Version: major},
 		{Brand: "Chromium", Version: major},
 	}
 	fullVersionList := []BrandVersion{
-		{Brand: "Not(A:Brand", Version: "99.0.0.0"},
+		{Brand: "Not:A-Brand", Version: "99.0.0.0"},
 		{Brand: "Google Chrome", Version: chromeVersionOrFallback(chromeVersion)},
 		{Brand: "Chromium", Version: chromeVersionOrFallback(chromeVersion)},
 	}
@@ -128,4 +130,12 @@ func chromeVersionOrFallback(chromeVersion string) string {
 		return chromeVersion
 	}
 	return "144.0.0.0"
+}
+
+func UseNativeUserAgent(cfg *config.RuntimeConfig) bool {
+	if cfg == nil || strings.TrimSpace(cfg.UserAgent) != "" {
+		return false
+	}
+	binary := strings.ToLower(strings.TrimSpace(cfg.ChromeBinary))
+	return strings.Contains(binary, ".cloakbrowser") && strings.Contains(binary, "chromium-")
 }

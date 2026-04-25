@@ -27,8 +27,12 @@ type ProfileBackendCloak struct {
 
 // ProfileBackendPinchTab mirrors the PinchTab-specific backend settings for a profile.
 type ProfileBackendPinchTab struct {
-	ProxyURL string `json:"proxyUrl,omitempty"`
-	Timezone string `json:"timezone,omitempty"`
+	ProxyURL       string   `json:"proxyUrl,omitempty"`
+	Timezone       string   `json:"timezone,omitempty"`
+	Locale         string   `json:"locale,omitempty"`
+	Binary         string   `json:"binary,omitempty"`
+	BrowserVersion string   `json:"browserVersion,omitempty"`
+	LaunchArgs     []string `json:"launchArgs,omitempty"`
 }
 
 // ProfileBackend describes which browser runtime backs a profile.
