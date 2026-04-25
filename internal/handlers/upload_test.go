@@ -122,7 +122,7 @@ func TestHandleUpload_RejectsSymlinkedUploadSandboxPath(t *testing.T) {
 		t.Skipf("symlink unsupported in test environment: %v", err)
 	}
 
-	h := New(&mockBridge{failTab: true}, &config.RuntimeConfig{AllowUpload: true, StateDir: tmpDir}, nil, nil, nil)
+	h := New(&mockBridge{}, &config.RuntimeConfig{AllowUpload: true, StateDir: tmpDir}, nil, nil, nil)
 	body := `{"selector": "input[type=file]", "paths": ["uploads/linked/secret.txt"]}`
 	req := httptest.NewRequest("POST", "/upload", bytes.NewReader([]byte(body)))
 	req.Header.Set("Content-Type", "application/json")
@@ -311,6 +311,27 @@ func TestHandleUpload_MultipartRejectsTooLarge(t *testing.T) {
 	h.HandleUpload(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for oversized multipart file, got %d", w.Code)
+	}
+}
+
+func TestStagedUploadFilename_PreservesOriginalName(t *testing.T) {
+	got := stagedUploadFilename(0, "video.mp4", []byte("ignored"))
+	if got != "video.mp4" {
+		t.Fatalf("stagedUploadFilename() = %q, want %q", got, "video.mp4")
+	}
+}
+
+func TestStagedUploadFilename_SanitizesPathComponents(t *testing.T) {
+	got := stagedUploadFilename(0, "../nested/video.mp4", []byte("ignored"))
+	if got != "video.mp4" {
+		t.Fatalf("stagedUploadFilename() = %q, want %q", got, "video.mp4")
+	}
+}
+
+func TestStagedUploadFilename_FallsBackWhenNameEmpty(t *testing.T) {
+	got := stagedUploadFilename(2, "", []byte("%PDF-1.4"))
+	if got != "upload-2.pdf" {
+		t.Fatalf("stagedUploadFilename() = %q, want %q", got, "upload-2.pdf")
 	}
 }
 

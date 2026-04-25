@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -40,6 +42,9 @@ type Handlers struct {
 }
 
 func New(b bridge.BridgeAPI, cfg *config.RuntimeConfig, p bridge.ProfileService, d *dashboard.Dashboard, o bridge.OrchestratorService) *Handlers {
+	if cfg == nil {
+		cfg = &config.RuntimeConfig{}
+	}
 	matcher := semantic.NewCombinedMatcher(semantic.NewHashingEmbedder(128))
 	intentCache := recovery.NewIntentCache(200, 10*time.Minute)
 
@@ -96,8 +101,11 @@ func New(b bridge.BridgeAPI, cfg *config.RuntimeConfig, p bridge.ProfileService,
 		return chromedp.Run(ctx, chromedp.Evaluate(expression, out))
 	}
 
-	// Clean up .tmp export files orphaned by a previous crash.
+	// Clean up temporary files orphaned by a previous crash.
 	go CleanupStaleTmpExports(cfg.StateDir)
+	go func() {
+		_ = os.RemoveAll(filepath.Join(cfg.StateDir, uploadStagingDirName))
+	}()
 
 	return h
 }

@@ -429,6 +429,7 @@ func (h *Handlers) HandleTab(w http.ResponseWriter, r *http.Request) {
 			httpx.Error(w, 500, err)
 			return
 		}
+		_ = cleanupUploadStagingDir(h.Config.StateDir, req.TabID)
 		httpx.JSON(w, 200, map[string]any{"closed": true})
 
 	case "focus":

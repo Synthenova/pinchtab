@@ -27,6 +27,7 @@ type uploadRequest struct {
 
 const (
 	uploadSandboxDirName = "uploads"
+	uploadStagingDirName = "upload-staging"
 )
 
 // HandleUpload sets files on an <input type="file"> element via CDP.
@@ -57,26 +58,6 @@ func (h *Handlers) HandleUpload(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, int64(maxRequestBytes))
 
-	req, tempFiles, cleanup, tempBytes, err := parseUploadRequest(r, maxFiles, maxFileBytes, maxTotalBytes)
-	if cleanup != nil {
-		defer cleanup()
-	}
-	if err != nil {
-		httpx.Error(w, 400, err)
-		return
-	}
-
-	if req.Selector == "" {
-		req.Selector = "input[type=file]"
-	}
-	uploadBase := filepath.Join(h.Config.StateDir, uploadSandboxDirName)
-	if err := validateUploadPaths(req.Paths, uploadBase, maxFileBytes, maxTotalBytes, tempBytes); err != nil {
-		httpx.Error(w, 400, err)
-		return
-	}
-
-	allPaths := append(tempFiles, req.Paths...)
-
 	ctx, resolvedTabID, err := h.tabContext(r, tabID)
 	if err != nil {
 		httpx.Error(w, 404, err)
@@ -90,6 +71,38 @@ func (h *Handlers) HandleUpload(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.enforceCurrentTabDomainPolicy(w, r, ctx, resolvedTabID); !ok {
 		return
 	}
+
+	stagingDir, err := prepareUploadStagingDir(h.Config.StateDir, resolvedTabID)
+	if err != nil {
+		httpx.Error(w, 500, fmt.Errorf("prepare upload staging: %w", err))
+		return
+	}
+
+	req, tempFiles, cleanup, tempBytes, err := parseUploadRequest(r, stagingDir, maxFiles, maxFileBytes, maxTotalBytes)
+	if err != nil {
+		_ = os.RemoveAll(stagingDir)
+		httpx.Error(w, 400, err)
+		return
+	}
+	if cleanup != nil {
+		defer func() {
+			if cleanupErr := cleanup(); cleanupErr != nil {
+				_ = os.RemoveAll(stagingDir)
+			}
+		}()
+	}
+
+	if req.Selector == "" {
+		req.Selector = "input[type=file]"
+	}
+	uploadBase := filepath.Join(h.Config.StateDir, uploadSandboxDirName)
+	if err := validateUploadPaths(req.Paths, uploadBase, maxFileBytes, maxTotalBytes, tempBytes); err != nil {
+		_ = os.RemoveAll(stagingDir)
+		httpx.Error(w, 400, err)
+		return
+	}
+
+	allPaths := append(tempFiles, req.Paths...)
 
 	tCtx, tCancel := context.WithTimeout(ctx, h.Config.ActionTimeout)
 	defer tCancel()
@@ -106,6 +119,7 @@ func (h *Handlers) HandleUpload(w http.ResponseWriter, r *http.Request) {
 			return dom.SetFileInputFiles(allPaths).WithNodeID(nodeID).Do(ctx)
 		}),
 	); err != nil {
+		_ = os.RemoveAll(stagingDir)
 		httpx.Error(w, 500, fmt.Errorf("upload: %w", err))
 		return
 	}
@@ -116,15 +130,15 @@ func (h *Handlers) HandleUpload(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func parseUploadRequest(r *http.Request, maxFiles, maxFileBytes, maxTotalBytes int) (uploadRequest, []string, func(), int64, error) {
+func parseUploadRequest(r *http.Request, stagingDir string, maxFiles, maxFileBytes, maxTotalBytes int) (uploadRequest, []string, func() error, int64, error) {
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err == nil && mediaType == "multipart/form-data" {
-		return parseMultipartUploadRequest(r, maxFiles, maxFileBytes, maxTotalBytes)
+		return parseMultipartUploadRequest(r, stagingDir, maxFiles, maxFileBytes, maxTotalBytes)
 	}
-	return parseJSONUploadRequest(r, maxFiles, maxFileBytes, maxTotalBytes)
+	return parseJSONUploadRequest(r, stagingDir, maxFiles, maxFileBytes, maxTotalBytes)
 }
 
-func parseJSONUploadRequest(r *http.Request, maxFiles, maxFileBytes, maxTotalBytes int) (uploadRequest, []string, func(), int64, error) {
+func parseJSONUploadRequest(r *http.Request, stagingDir string, maxFiles, maxFileBytes, maxTotalBytes int) (uploadRequest, []string, func() error, int64, error) {
 	var req uploadRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		return uploadRequest{}, nil, nil, 0, fmt.Errorf("invalid JSON body: %w", err)
@@ -140,51 +154,35 @@ func parseJSONUploadRequest(r *http.Request, maxFiles, maxFileBytes, maxTotalByt
 		return req, nil, nil, 0, nil
 	}
 
-	tmpDir, err := os.MkdirTemp("", "pinchtab-upload-*")
-	if err != nil {
-		return uploadRequest{}, nil, nil, 0, fmt.Errorf("create temp dir: %w", err)
-	}
-	cleanup := func() { _ = os.RemoveAll(tmpDir) }
-
 	var totalBytes int64
 	tempFiles := make([]string, 0, len(req.Files))
 	for i, f := range req.Files {
 		data, ext, err := decodeFileData(f)
 		if err != nil {
-			cleanup()
 			return uploadRequest{}, nil, nil, 0, fmt.Errorf("file[%d]: %w", i, err)
 		}
 		if len(data) > maxFileBytes {
-			cleanup()
 			return uploadRequest{}, nil, nil, 0, fmt.Errorf("file[%d] exceeds max size %d bytes", i, maxFileBytes)
 		}
 		totalBytes += int64(len(data))
 		if totalBytes > int64(maxTotalBytes) {
-			cleanup()
 			return uploadRequest{}, nil, nil, 0, fmt.Errorf("upload payload too large: max %d bytes total", maxTotalBytes)
 		}
-		path := filepath.Join(tmpDir, fmt.Sprintf("upload-%d%s", i, ext))
+		path := filepath.Join(stagingDir, fmt.Sprintf("upload-%d%s", i, ext))
 		if err := os.WriteFile(path, data, 0600); err != nil {
-			cleanup()
 			return uploadRequest{}, nil, nil, 0, fmt.Errorf("write temp file: %w", err)
 		}
 		tempFiles = append(tempFiles, path)
 	}
 
-	return req, tempFiles, cleanup, totalBytes, nil
+	return req, tempFiles, nil, totalBytes, nil
 }
 
-func parseMultipartUploadRequest(r *http.Request, maxFiles, maxFileBytes, maxTotalBytes int) (uploadRequest, []string, func(), int64, error) {
+func parseMultipartUploadRequest(r *http.Request, stagingDir string, maxFiles, maxFileBytes, maxTotalBytes int) (uploadRequest, []string, func() error, int64, error) {
 	reader, err := r.MultipartReader()
 	if err != nil {
 		return uploadRequest{}, nil, nil, 0, fmt.Errorf("invalid multipart body: %w", err)
 	}
-
-	tmpDir, err := os.MkdirTemp("", "pinchtab-upload-*")
-	if err != nil {
-		return uploadRequest{}, nil, nil, 0, fmt.Errorf("create temp dir: %w", err)
-	}
-	cleanup := func() { _ = os.RemoveAll(tmpDir) }
 
 	req := uploadRequest{}
 	var totalBytes int64
@@ -197,7 +195,6 @@ func parseMultipartUploadRequest(r *http.Request, maxFiles, maxFileBytes, maxTot
 			break
 		}
 		if err != nil {
-			cleanup()
 			return uploadRequest{}, nil, nil, 0, fmt.Errorf("read multipart body: %w", err)
 		}
 
@@ -207,7 +204,6 @@ func parseMultipartUploadRequest(r *http.Request, maxFiles, maxFileBytes, maxTot
 			value, readErr := io.ReadAll(io.LimitReader(part, 64<<10))
 			_ = part.Close()
 			if readErr != nil {
-				cleanup()
 				return uploadRequest{}, nil, nil, 0, fmt.Errorf("read multipart field %q: %w", fieldName, readErr)
 			}
 			switch fieldName {
@@ -225,19 +221,16 @@ func parseMultipartUploadRequest(r *http.Request, maxFiles, maxFileBytes, maxTot
 		}
 		if fileIndex+len(req.Paths) >= maxFiles {
 			_ = part.Close()
-			cleanup()
 			return uploadRequest{}, nil, nil, 0, fmt.Errorf("too many files: max %d", maxFiles)
 		}
 
-		tempPath, size, saveErr := saveMultipartFile(part, tmpDir, fileIndex, maxFileBytes)
+		tempPath, size, saveErr := saveMultipartFile(part, stagingDir, fileIndex, filename, maxFileBytes)
 		_ = part.Close()
 		if saveErr != nil {
-			cleanup()
 			return uploadRequest{}, nil, nil, 0, saveErr
 		}
 		totalBytes += size
 		if totalBytes > int64(maxTotalBytes) {
-			cleanup()
 			return uploadRequest{}, nil, nil, 0, fmt.Errorf("upload payload too large: max %d bytes total", maxTotalBytes)
 		}
 		tempFiles = append(tempFiles, tempPath)
@@ -245,15 +238,13 @@ func parseMultipartUploadRequest(r *http.Request, maxFiles, maxFileBytes, maxTot
 	}
 
 	if len(tempFiles) == 0 && len(req.Paths) == 0 {
-		cleanup()
 		return uploadRequest{}, nil, nil, 0, fmt.Errorf("either multipart 'file' parts or 'paths' fields required")
 	}
 	if len(tempFiles)+len(req.Paths) > maxFiles {
-		cleanup()
 		return uploadRequest{}, nil, nil, 0, fmt.Errorf("too many files: max %d", maxFiles)
 	}
 
-	return req, tempFiles, cleanup, totalBytes, nil
+	return req, tempFiles, nil, totalBytes, nil
 }
 
 func validateUploadPaths(paths []string, uploadBase string, maxFileBytes, maxTotalBytes int, baseBytes int64) error {
@@ -272,7 +263,7 @@ func validateUploadPaths(paths []string, uploadBase string, maxFileBytes, maxTot
 	return nil
 }
 
-func saveMultipartFile(part io.Reader, tmpDir string, index, maxFileBytes int) (string, int64, error) {
+func saveMultipartFile(part io.Reader, tmpDir string, index int, originalName string, maxFileBytes int) (string, int64, error) {
 	header := make([]byte, 0, 512)
 	limited := &io.LimitedReader{R: part, N: int64(maxFileBytes) + 1}
 	chunk := make([]byte, 32<<10)
@@ -301,8 +292,8 @@ func saveMultipartFile(part io.Reader, tmpDir string, index, maxFileBytes int) (
 		return "", 0, fmt.Errorf("multipart file[%d] exceeds max size %d bytes", index, maxFileBytes)
 	}
 
-	ext := sniffExt(header)
-	path := filepath.Join(tmpDir, fmt.Sprintf("upload-%d%s", index, ext))
+	name := stagedUploadFilename(index, originalName, header)
+	path := filepath.Join(tmpDir, name)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
 		return "", 0, fmt.Errorf("write temp file: %w", err)
@@ -324,6 +315,68 @@ func saveMultipartFile(part io.Reader, tmpDir string, index, maxFileBytes int) (
 	}
 
 	return path, size, nil
+}
+
+func stagedUploadFilename(index int, originalName string, header []byte) string {
+	name := sanitizeUploadFilename(originalName)
+	if name != "" {
+		return name
+	}
+	return fmt.Sprintf("upload-%d%s", index, sniffExt(header))
+}
+
+func sanitizeUploadFilename(name string) string {
+	base := filepath.Base(strings.TrimSpace(name))
+	if base == "." || base == string(filepath.Separator) || base == "" {
+		return ""
+	}
+	base = strings.Map(func(r rune) rune {
+		switch {
+		case r == 0:
+			return -1
+		case r == '/' || r == '\\':
+			return -1
+		case r < 32:
+			return -1
+		default:
+			return r
+		}
+	}, base)
+	base = strings.TrimSpace(base)
+	base = strings.Trim(base, ".")
+	if base == "" {
+		return ""
+	}
+	return base
+}
+
+func prepareUploadStagingDir(stateDir, tabID string) (string, error) {
+	root := uploadStagingRoot(stateDir)
+	if err := os.MkdirAll(root, 0700); err != nil {
+		return "", err
+	}
+	stagingDir := filepath.Join(root, tabID)
+	if err := os.RemoveAll(stagingDir); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(stagingDir, 0700); err != nil {
+		return "", err
+	}
+	return stagingDir, nil
+}
+
+func cleanupUploadStagingDir(stateDir, tabID string) error {
+	if tabID == "" {
+		return nil
+	}
+	return os.RemoveAll(filepath.Join(uploadStagingRoot(stateDir), tabID))
+}
+
+func uploadStagingRoot(stateDir string) string {
+	if strings.TrimSpace(stateDir) == "" {
+		return filepath.Join(os.TempDir(), "pinchtab", uploadStagingDirName)
+	}
+	return filepath.Join(stateDir, uploadStagingDirName)
 }
 
 // HandleTabUpload uploads files for a tab identified by path ID.
