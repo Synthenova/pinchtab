@@ -13,7 +13,8 @@ Use this guide when an agent needs to set up a fresh machine end to end without 
 3. check for the GCS credential JSON
 4. start the PinchTab server
 5. import the cloud profiles
-6. return the dashboard URL
+6. make the server persistent with `launchd` if needed
+7. return the dashboard URL
 
 This is intentionally operational and exact.
 
@@ -25,6 +26,7 @@ At the end of this guide, the machine should have:
 - PinchTab configured with the Cloak binary path and Chrome version
 - PinchTab server running at `http://127.0.0.1:9868`
 - cloud profiles imported into PinchTab
+- optional persistent `launchd` service installed
 - dashboard URL ready to hand back to the user
 
 ## Inputs This Setup Uses
@@ -217,7 +219,72 @@ curl -s -X POST http://127.0.0.1:9868/profiles/cloud/import \
   }'
 ```
 
-## 6. What the Agent Should Return
+## 6. Make the Server Persistent with launchd
+
+If the machine should keep PinchTab running across terminal closes, logouts, or reboots, install the user-level `launchd` service.
+
+### 6.1 Install the service
+
+From the PinchTab repo root:
+
+```bash
+./pinchtab daemon install
+./pinchtab daemon start
+```
+
+Or simply:
+
+```bash
+./pinchtab daemon restart
+```
+
+Useful checks:
+
+```bash
+./pinchtab daemon
+launchctl print gui/$(id -u)/com.pinchtab.pinchtab
+```
+
+The standard `launchd` plist path is:
+
+- `~/Library/LaunchAgents/com.pinchtab.pinchtab.plist`
+
+If the automated daemon commands fail, the manual `launchd` command is:
+
+```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.pinchtab.pinchtab.plist
+```
+
+### 6.2 Git pull, rebuild, and restart launchd
+
+When the repo changes, the safe update flow is:
+
+```bash
+cd /PATH/TO/pinchtab
+git pull
+go build -o pinchtab ./cmd/pinchtab
+./scripts/build-dashboard.sh
+./pinchtab daemon restart
+```
+
+That sequence does four things:
+
+- updates the repo
+- rebuilds the binary
+- rebuilds the embedded dashboard assets
+- restarts the background service so the new build is live
+
+If you want a quick health check after restart:
+
+```bash
+curl http://127.0.0.1:9868/health
+```
+
+Expected dashboard URL after restart:
+
+- `http://127.0.0.1:9868`
+
+## 7. What the Agent Should Return
 
 After setup is complete, the agent should return:
 
@@ -225,6 +292,7 @@ After setup is complete, the agent should return:
 - confirmation that CloakBrowser binary path was configured
 - confirmation that the GCS key was present and used
 - confirmation that `Comphy Headed` and `Layer Headed` were imported
+- whether `launchd` persistence was installed
 
 Example final handoff:
 
@@ -234,6 +302,7 @@ CloakBrowser binary is configured in PinchTab
 GCS credentials were found and cloud profiles were imported:
 - Comphy Headed
 - Layer Headed
+launchd persistence is installed and the daemon is running
 ```
 
 ## Notes
