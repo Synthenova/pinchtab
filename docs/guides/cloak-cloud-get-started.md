@@ -5,6 +5,7 @@ This guide is for the exact setup used in this repo:
 - PinchTab server on `127.0.0.1:9868`
 - CloakBrowser Chromium as the browser binary
 - shared cloud-backed PinchTab profiles in GCS
+- branch: `codex/pinchtab-profile-proxy-tz`
 
 Use this guide when an agent needs to set up a fresh machine end to end without human hand-holding:
 
@@ -17,6 +18,22 @@ Use this guide when an agent needs to set up a fresh machine end to end without 
 7. return the dashboard URL
 
 This is intentionally operational and exact.
+
+## Clone the Correct Branch
+
+This workflow depends on changes that are on:
+
+- `codex/pinchtab-profile-proxy-tz`
+
+Do not assume a random branch or upstream `main` has this setup.
+
+Start with:
+
+```bash
+git clone https://github.com/Synthenova/pinchtab.git
+cd pinchtab
+git checkout codex/pinchtab-profile-proxy-tz
+```
 
 ## Expected Result
 
