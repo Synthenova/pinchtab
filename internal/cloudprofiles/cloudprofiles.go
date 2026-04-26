@@ -69,6 +69,7 @@ type localState struct {
 	LastSyncedHash    string    `json:"lastSyncedHash,omitempty"`
 	LastSyncedAt      time.Time `json:"lastSyncedAt,omitempty"`
 	LastSyncedVersion string    `json:"lastSyncedVersion,omitempty"`
+	LastFinalizeState string    `json:"lastFinalizeState,omitempty"`
 	LastError         string    `json:"lastError,omitempty"`
 }
 
@@ -363,6 +364,12 @@ func (c *Client) latest(ctx context.Context) (latestVersion, bool, error) {
 	var latest latestVersion
 	ok, _, err := loadJSON(ctx, c.object("latest.json"), &latest)
 	return latest, ok, err
+}
+
+func (c *Client) currentLease(ctx context.Context) (leaseRecord, bool, error) {
+	var lease leaseRecord
+	ok, _, err := loadJSON(ctx, c.object("lease.json"), &lease)
+	return lease, ok, err
 }
 
 func excludedPath(rel string) bool {
@@ -818,6 +825,27 @@ func Status(ctx context.Context, profilePath string, cfg *bridge.ProfileCloudCon
 	if !Enabled(cfg) {
 		return nil, nil
 	}
+	if finalizeStatus, err := GetFinalizeStatus(ctx, profilePath, cfg); err == nil && finalizeStatus != nil {
+		switch finalizeStatus.State {
+		case "queued", "archiving", "uploading", "updating-latest", "releasing-lease":
+			status := &bridge.ProfileCloudStatus{
+				State:         "stopped-uploading",
+				RemoteVersion: finalizeStatus.RemoteVersion,
+				LocalVersion:  finalizeStatus.LocalVersion,
+				Progress:      finalizeStatus.Progress,
+				Message:       finalizeStatus.State,
+			}
+			return status, nil
+		case "error":
+			status := &bridge.ProfileCloudStatus{
+				State:         "upload-failed",
+				RemoteVersion: finalizeStatus.RemoteVersion,
+				LocalVersion:  finalizeStatus.LocalVersion,
+				Message:       finalizeStatus.Error,
+			}
+			return status, nil
+		}
+	}
 	if syncStatus, err := GetSyncStatus(ctx, profilePath, cfg); err == nil && syncStatus != nil {
 		switch syncStatus.State {
 		case "queued", "checking", "downloading", "extracting", "ready", "error":
@@ -836,6 +864,9 @@ func Status(ctx context.Context, profilePath string, cfg *bridge.ProfileCloudCon
 		LastSyncAt:   state.LastSyncedAt,
 		Message:      state.LastError,
 		State:        "available",
+	}
+	if state.LastFinalizeState == "upload-failed" {
+		status.State = "upload-failed"
 	}
 	client, err := New(ctx, cfg)
 	if err != nil {

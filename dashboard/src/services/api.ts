@@ -213,6 +213,50 @@ export async function startProfileSync(id: string): Promise<ProfileSyncStatus> {
   );
 }
 
+export interface ProfileFinalizeStatus {
+  state?: string;
+  progress?: number;
+  bytesDone?: number;
+  bytesTotal?: number;
+  error?: string;
+  remoteVersion?: string;
+  localVersion?: string;
+  startedAt?: string;
+  updatedAt?: string;
+  canRetry?: boolean;
+  canDiscard?: boolean;
+}
+
+export async function fetchProfileFinalize(
+  id: string,
+): Promise<ProfileFinalizeStatus> {
+  return request<ProfileFinalizeStatus>(
+    `/profiles/${encodeURIComponent(id)}/cloud/finalize`,
+  );
+}
+
+export async function retryProfileFinalize(
+  id: string,
+): Promise<ProfileFinalizeStatus> {
+  return request<ProfileFinalizeStatus>(
+    `/profiles/${encodeURIComponent(id)}/cloud/retry-upload`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export async function discardProfileFinalize(
+  id: string,
+): Promise<{ status: string; name: string }> {
+  return request<{ status: string; name: string }>(
+    `/profiles/${encodeURIComponent(id)}/cloud/discard-local`,
+    {
+      method: "POST",
+    },
+  );
+}
+
 export interface DiscoverCloudProfilesRequest {
   bucket: string;
   prefix: string;

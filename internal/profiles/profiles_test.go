@@ -330,6 +330,51 @@ func TestProfileManagerDelete(t *testing.T) {
 	}
 }
 
+func TestProfileManagerDeleteCloudBackedPinchTabProfileDetachesLocally(t *testing.T) {
+	dir := t.TempDir()
+	pm := NewProfileManager(dir)
+	enabled := true
+	keepLocalCache := true
+	meta := ProfileMeta{
+		Name: "cloudy",
+		Backend: &bridge.ProfileBackend{
+			Kind: "pinchtab",
+			PinchTab: &bridge.ProfileBackendPinchTab{
+				Cloud: &bridge.ProfileCloudConfig{
+					Enabled:        &enabled,
+					Provider:       "gcs",
+					Bucket:         "conthunt-dev-pinchtab-profiles",
+					Prefix:         "pinchtab/profiles",
+					ProfileID:      "cp_detach_only",
+					CredentialPath: "/tmp/fake-key.json",
+					KeepLocalCache: &keepLocalCache,
+				},
+			},
+		},
+	}
+	if err := pm.CreateWithMeta("cloudy", meta); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := pm.Delete("cloudy"); err != nil {
+		t.Fatal(err)
+	}
+
+	profiles, err := pm.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 0 {
+		t.Fatalf("expected profile to be removed locally, got %d profiles", len(profiles))
+	}
+
+	// The same name/profile can be reattached later because delete only removes
+	// the local entry and does not reserve or mutate the cloud profile ID.
+	if err := pm.CreateWithMeta("cloudy", meta); err != nil {
+		t.Fatalf("expected cloud-backed profile to be creatable again after delete: %v", err)
+	}
+}
+
 func TestProfileManagerLogsAndAnalyticsUseActivityRecorder(t *testing.T) {
 	pm := NewProfileManager(t.TempDir())
 	store, err := activity.NewStore(t.TempDir(), 1)

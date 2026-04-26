@@ -57,6 +57,7 @@ type ProfileCloudStatus struct {
 	RemoteVersion  string    `json:"remoteVersion,omitempty"`
 	LocalVersion   string    `json:"localVersion,omitempty"`
 	LastSyncAt     time.Time `json:"lastSyncAt,omitempty"`
+	Progress       int       `json:"progress,omitempty"`
 	Message        string    `json:"message,omitempty"`
 }
 

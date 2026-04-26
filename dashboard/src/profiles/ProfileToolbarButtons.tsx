@@ -8,12 +8,15 @@ interface Props {
   onLaunch: () => void;
   onStop: () => void;
   onSync?: () => void;
+  onRetryUpload?: () => void;
+  onDiscardChanges?: () => void;
   onSave: () => void;
   onDelete: () => void;
   isSaveDisabled: boolean;
   isLaunchDisabled?: boolean;
   launchDisabledReason?: string;
   syncLoading?: boolean;
+  finalizeLoading?: boolean;
 }
 
 export default function ProfileToolbarButtons({
@@ -22,16 +25,22 @@ export default function ProfileToolbarButtons({
   onLaunch,
   onStop,
   onSync,
+  onRetryUpload,
+  onDiscardChanges,
   onSave,
   onDelete,
   isSaveDisabled,
   isLaunchDisabled = false,
   launchDisabledReason,
   syncLoading = false,
+  finalizeLoading = false,
 }: Props) {
   const [copyFeedback, setCopyFeedback] = useState("");
   const isRunning = instance?.status === "running";
   const cloudEnabled = !!profile.backend?.pinchtab?.cloud?.enabled;
+  const cloudState = profile.cloudStatus?.state || "";
+  const uploadFailed = cloudState === "upload-failed";
+  const uploading = cloudState === "stopped-uploading";
 
   const handleCopyId = async () => {
     if (!profile.id) return;
@@ -61,10 +70,40 @@ export default function ProfileToolbarButtons({
           variant="secondary"
           onClick={onSync}
           loading={syncLoading}
-          disabled={isRunning}
+          disabled={isRunning || uploading}
           title={isRunning ? "Stop the browser before syncing" : undefined}
         >
           Sync
+        </Button>
+      )}
+      {uploadFailed && onRetryUpload && (
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={onRetryUpload}
+          loading={finalizeLoading}
+        >
+          Retry Upload
+        </Button>
+      )}
+      {uploadFailed && onDiscardChanges && (
+        <Button
+          size="sm"
+          variant="danger"
+          onClick={onDiscardChanges}
+          disabled={finalizeLoading}
+        >
+          Discard Changes
+        </Button>
+      )}
+      {uploading && (
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled
+          loading={finalizeLoading}
+        >
+          Uploading…
         </Button>
       )}
       <Button

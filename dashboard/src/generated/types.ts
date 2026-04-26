@@ -66,6 +66,7 @@ export interface ProfileCloudStatus {
   remoteVersion?: string;
   localVersion?: string;
   lastSyncAt?: string;
+  progress?: number /* int */;
   message?: string;
 }
 /**

@@ -67,7 +67,11 @@ func (o *Orchestrator) handleStopByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	authn.AuditLog(r, "instance.stopped", "profileId", id, "profileName", name)
-	httpx.JSON(w, 200, map[string]string{"status": "stopped", "id": id, "name": name})
+	resp := map[string]any{"status": "stopped", "id": id, "name": name}
+	if finalizeStatus, err := o.finalizeStatusForProfile(name); err == nil && finalizeStatus != nil && finalizeStatus.State != "idle" && finalizeStatus.State != "disabled" {
+		resp["cloudFinalize"] = finalizeStatus
+	}
+	httpx.JSON(w, 200, resp)
 }
 
 func (o *Orchestrator) handleProfileInstance(w http.ResponseWriter, r *http.Request) {

@@ -254,6 +254,9 @@ export default function ProfilesPage() {
   const [showCloudImport, setShowCloudImport] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const [syncingProfileId, setSyncingProfileId] = useState<string | null>(null);
+  const [finalizeProfileId, setFinalizeProfileId] = useState<string | null>(
+    null,
+  );
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const locationState = location.state as ProfilesLocationState | null;
@@ -309,13 +312,57 @@ export default function ProfilesPage() {
     }
   }, [profiles, routeSelectedProfileKey, selectedProfileKey]);
 
-  const handleStop = async (profileName: string) => {
+  const pollFinalizeStatus = async (profile: Profile) => {
+    if (!profile.id) return;
+    setFinalizeProfileId(profile.id);
+    try {
+      let attempts = 0;
+      while (attempts < 90) {
+        attempts += 1;
+        const status = await api.fetchProfileFinalize(profile.id);
+        await loadProfiles(profile.id);
+        if (status.state === "done" || status.state === "idle") {
+          setBanner(`Cloud upload completed for ${profile.name}.`);
+          break;
+        }
+        if (status.state === "error") {
+          setBanner(status.error || `Cloud upload failed for ${profile.name}.`);
+          break;
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 1000));
+      }
+    } catch (e) {
+      console.error("Failed to poll finalize status", e);
+      setBanner(
+        e instanceof Error
+          ? e.message
+          : `Failed to refresh cloud upload for ${profile.name}.`,
+      );
+    } finally {
+      setFinalizeProfileId(null);
+      await loadProfiles(profile.id);
+    }
+  };
+
+  const handleStop = async (profile: Profile) => {
+    const profileName = profile.name;
     const inst = instanceByProfile.get(profileName);
     if (!inst) return;
     try {
       await api.stopInstance(inst.id);
-      const updated = await api.fetchInstances();
-      setInstances(updated);
+      const [updatedInstances] = await Promise.all([
+        api.fetchInstances(),
+        loadProfiles(profile.id),
+      ]);
+      setInstances(updatedInstances);
+      const refreshed = await api.fetchProfiles();
+      const stoppedProfile =
+        refreshed.find((item) => item.id === profile.id) || profile;
+      setProfiles(refreshed);
+      if (stoppedProfile.cloudStatus?.state === "stopped-uploading") {
+        setBanner(`Stopping ${profile.name}. Cloud upload is continuing.`);
+        await pollFinalizeStatus(stoppedProfile);
+      }
     } catch (e) {
       console.error("Failed to stop instance", e);
     }
@@ -392,6 +439,45 @@ export default function ProfilesPage() {
     } finally {
       setSyncingProfileId(null);
       await loadProfiles(profile.id);
+    }
+  };
+
+  const handleRetryUpload = async (profile: Profile) => {
+    if (!profile.id || finalizeProfileId) return;
+    setFinalizeProfileId(profile.id);
+    setBanner(null);
+    try {
+      await api.retryProfileFinalize(profile.id);
+      setBanner(`Retrying cloud upload for ${profile.name}.`);
+      await pollFinalizeStatus(profile);
+    } catch (e) {
+      console.error("Failed to retry upload", e);
+      setBanner(
+        e instanceof Error
+          ? e.message
+          : `Failed to retry upload for ${profile.name}.`,
+      );
+      setFinalizeProfileId(null);
+    }
+  };
+
+  const handleDiscardChanges = async (profile: Profile) => {
+    if (!profile.id || finalizeProfileId) return;
+    setFinalizeProfileId(profile.id);
+    setBanner(null);
+    try {
+      await api.discardProfileFinalize(profile.id);
+      await loadProfiles(profile.id);
+      setBanner(`Discarded unsynced local changes for ${profile.name}.`);
+    } catch (e) {
+      console.error("Failed to discard local cloud changes", e);
+      setBanner(
+        e instanceof Error
+          ? e.message
+          : `Failed to discard local changes for ${profile.name}.`,
+      );
+    } finally {
+      setFinalizeProfileId(null);
     }
   };
 
@@ -533,11 +619,11 @@ export default function ProfilesPage() {
           ) : (
             <div className="dashboard-panel flex h-full min-h-0 flex-col overflow-hidden rounded-none! border-t-0 lg:flex-row">
               <div className="flex max-h-88 w-full shrink-0 flex-col overflow-hidden border-r border-border-subtle bg-bg-surface/50 lg:max-h-none lg:w-80">
-                <div className="flex items-center justify-between border-b border-border-subtle px-4 py-2.5">
+                <div className="border-b border-border-subtle px-4 py-2.5">
                   <span className="text-xs font-medium text-text-muted">
                     Profiles
                   </span>
-                  <div className="flex items-center gap-2">
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
                     <Button
                       type="button"
                       size="sm"
@@ -569,6 +655,7 @@ export default function ProfilesPage() {
                       type="button"
                       size="sm"
                       variant="primary"
+                      className="ml-auto"
                       onClick={() => setShowCreate(true)}
                     >
                       New Profile
@@ -728,15 +815,21 @@ export default function ProfilesPage() {
                     selectedProfile &&
                     setLaunchProfileKey(getProfileKey(selectedProfile))
                   }
-                  onStop={() =>
-                    selectedProfile && handleStop(selectedProfile.name)
-                  }
+                  onStop={() => selectedProfile && handleStop(selectedProfile)}
                   onSync={() =>
                     selectedProfile && void handleSync(selectedProfile)
+                  }
+                  onRetryUpload={() =>
+                    selectedProfile && void handleRetryUpload(selectedProfile)
+                  }
+                  onDiscardChanges={() =>
+                    selectedProfile &&
+                    void handleDiscardChanges(selectedProfile)
                   }
                   onSave={handleSave}
                   onDelete={handleDelete}
                   syncLoading={syncingProfileId === selectedProfile?.id}
+                  finalizeLoading={finalizeProfileId === selectedProfile?.id}
                 />
               </div>
             </div>

@@ -148,6 +148,16 @@ export default function ProfileMetaInfoPanel({ profile, instance }: Props) {
                   </span>
                 </div>
               )}
+              {profile.cloudStatus?.progress ? (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="dashboard-section-title text-[0.68rem]">
+                    Progress
+                  </span>
+                  <span className="text-right">
+                    {profile.cloudStatus.progress}%
+                  </span>
+                </div>
+              ) : null}
               {profile.cloudStatus?.message && (
                 <div className="text-xs text-destructive">
                   {profile.cloudStatus.message}
@@ -159,6 +169,18 @@ export default function ProfileMetaInfoPanel({ profile, instance }: Props) {
                 <div className="text-xs text-text-muted">
                   Sync is currently in progress. You can keep this panel open
                   and use the Sync button to refresh state through the API.
+                </div>
+              )}
+              {profile.cloudStatus?.state === "stopped-uploading" && (
+                <div className="text-xs text-text-muted">
+                  Browser is stopped. Cloud upload is finishing in the
+                  background.
+                </div>
+              )}
+              {profile.cloudStatus?.state === "upload-failed" && (
+                <div className="text-xs text-text-muted">
+                  Cloud upload failed. Retry the upload or discard local
+                  unsynced changes.
                 </div>
               )}
             </>

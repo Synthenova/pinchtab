@@ -997,8 +997,10 @@ func (o *Orchestrator) markStopped(id string) {
 		_ = browserProxy.Close()
 	}
 	if cloudSession != nil && strings.TrimSpace(profilePath) != "" {
-		if err := cloudprofiles.Finalize(context.Background(), profilePath, cloudSession); err != nil {
-			slog.Warn("failed to finalize cloud profile", "profile", profileName, "err", err)
+		if status, err := cloudprofiles.StartFinalize(context.Background(), profileName, profilePath, cloudSession); err != nil {
+			slog.Warn("failed to start cloud profile finalize", "profile", profileName, "err", err)
+		} else {
+			slog.Info("started cloud profile finalize", "profile", profileName, "state", status.State)
 		}
 	}
 

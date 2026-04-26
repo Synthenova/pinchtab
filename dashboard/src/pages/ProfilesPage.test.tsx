@@ -16,6 +16,7 @@ import * as api from "../services/api";
 vi.mock("../services/api", () => ({
   fetchProfiles: vi.fn(),
   fetchProfileSync: vi.fn(),
+  fetchProfileFinalize: vi.fn(),
   createProfile: vi.fn(),
   deleteProfile: vi.fn(),
   exportProfileConfigs: vi.fn(),
@@ -25,6 +26,8 @@ vi.mock("../services/api", () => ({
   discoverCloudProfiles: vi.fn(),
   importCloudProfile: vi.fn(),
   launchInstance: vi.fn(),
+  retryProfileFinalize: vi.fn(),
+  discardProfileFinalize: vi.fn(),
   startProfileSync: vi.fn(),
   stopInstance: vi.fn(),
   fetchInstanceTabs: vi.fn(),
@@ -141,6 +144,9 @@ describe("ProfilesPage", () => {
     vi.mocked(api.fetchProfileSync).mockResolvedValue({
       state: "ready",
     });
+    vi.mocked(api.fetchProfileFinalize).mockResolvedValue({
+      state: "idle",
+    });
     vi.mocked(api.fetchInstances).mockResolvedValue(instances);
     vi.mocked(api.exportProfileConfigs).mockResolvedValue({
       version: "pinchtab.profile-config.v1",
@@ -158,6 +164,13 @@ describe("ProfilesPage", () => {
     vi.mocked(api.importCloudProfile).mockResolvedValue({
       status: "imported",
       name: "alpha-cloud",
+    });
+    vi.mocked(api.retryProfileFinalize).mockResolvedValue({
+      state: "queued",
+    });
+    vi.mocked(api.discardProfileFinalize).mockResolvedValue({
+      status: "discarded",
+      name: "alpha",
     });
     vi.mocked(api.startProfileSync).mockResolvedValue({
       state: "queued",

@@ -631,6 +631,9 @@ func (pm *ProfileManager) Delete(name string) error {
 		return err
 	}
 	meta := normalizeProfileBackend(readProfileMeta(dir).Backend)
+	// Cloud-backed PinchTab profiles are detachable local entries. Deleting
+	// them must not delete their remote cloud state so they can be reattached
+	// later through Import Cloud.
 	if err := deleteCloakProfile(meta); err != nil {
 		return err
 	}

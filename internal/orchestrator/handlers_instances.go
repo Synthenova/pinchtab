@@ -68,12 +68,25 @@ func (o *Orchestrator) handleLaunchByName(w http.ResponseWriter, r *http.Request
 
 func (o *Orchestrator) handleStopByInstanceID(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	o.mu.RLock()
+	inst, ok := o.instances[id]
+	profileName := ""
+	if ok {
+		profileName = inst.ProfileName
+	}
+	o.mu.RUnlock()
 	if err := o.Stop(id); err != nil {
 		httpx.Error(w, 404, err)
 		return
 	}
 	authn.AuditLog(r, "instance.stopped", "instanceId", id)
-	httpx.JSON(w, 200, map[string]string{"status": "stopped", "id": id})
+	resp := map[string]any{"status": "stopped", "id": id}
+	if profileName != "" {
+		if finalizeStatus, err := o.finalizeStatusForProfile(profileName); err == nil && finalizeStatus != nil && finalizeStatus.State != "idle" && finalizeStatus.State != "disabled" {
+			resp["cloudFinalize"] = finalizeStatus
+		}
+	}
+	httpx.JSON(w, 200, resp)
 }
 
 func (o *Orchestrator) handleRestartByInstanceID(w http.ResponseWriter, r *http.Request) {

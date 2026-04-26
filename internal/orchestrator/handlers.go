@@ -34,6 +34,9 @@ func (o *Orchestrator) registerHandlers(mux *http.ServeMux, skipLaunch bool) {
 	if !skipLaunch {
 		mux.HandleFunc("POST /profiles/{id}/sync", o.handleStartProfileSync)
 	}
+	mux.HandleFunc("GET /profiles/{id}/cloud/finalize", o.handleGetProfileFinalize)
+	mux.HandleFunc("POST /profiles/{id}/cloud/retry-upload", o.handleRetryProfileFinalize)
+	mux.HandleFunc("POST /profiles/{id}/cloud/discard-local", o.handleDiscardProfileFinalize)
 	mux.HandleFunc("POST /profiles/{id}/stop", o.handleStopByID)
 	mux.HandleFunc("GET /profiles/{id}/instance", o.handleProfileInstance)
 

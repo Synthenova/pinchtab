@@ -16,9 +16,12 @@ interface Props {
   onLaunch: () => void;
   onStop?: () => void;
   onSync?: () => void;
+  onRetryUpload?: () => void;
+  onDiscardChanges?: () => void;
   onSave?: (values: UpdateProfileRequest) => void;
   onDelete?: () => void;
   syncLoading?: boolean;
+  finalizeLoading?: boolean;
 }
 
 type TabId = "profile" | "live" | "tabs" | "logs";
@@ -29,9 +32,12 @@ export default function ProfileDetailsPanel({
   onLaunch,
   onStop,
   onSync,
+  onRetryUpload,
+  onDiscardChanges,
   onSave,
   onDelete,
   syncLoading,
+  finalizeLoading,
 }: Props) {
   const [activeTab, setActiveTab] = useState<TabId>("profile");
   const [tabs, setTabs] = useState<InstanceTab[]>([]);
@@ -110,6 +116,10 @@ export default function ProfileDetailsPanel({
     profile.cloudStatus?.state === "in-use" &&
     !instance &&
     !!profile.cloudStatus?.leaseMachine;
+  const launchBlockedByUpload =
+    (profile.cloudStatus?.state === "stopped-uploading" ||
+      profile.cloudStatus?.state === "upload-failed") &&
+    !instance;
 
   const profileTabs: { id: TabId; label: string; badge?: string | number }[] = [
     { id: "profile", label: `Profile: ${profile.name}` },
@@ -132,16 +142,25 @@ export default function ProfileDetailsPanel({
               onLaunch={onLaunch}
               onStop={onStop || (() => {})}
               onSync={onSync}
+              onRetryUpload={onRetryUpload}
+              onDiscardChanges={onDiscardChanges}
               onSave={handleSave}
               onDelete={onDelete || (() => {})}
               isSaveDisabled={!(formValues.name || "").trim() || !hasChanges}
-              isLaunchDisabled={launchBlockedByCloudLease}
+              isLaunchDisabled={
+                launchBlockedByCloudLease || launchBlockedByUpload
+              }
               launchDisabledReason={
                 launchBlockedByCloudLease
                   ? `In use by ${profile.cloudStatus?.leaseUser || "another user"} on ${profile.cloudStatus?.leaseMachine}`
-                  : undefined
+                  : launchBlockedByUpload
+                    ? profile.cloudStatus?.state === "stopped-uploading"
+                      ? "Cloud upload is still in progress."
+                      : "Resolve the failed cloud upload before starting again."
+                    : undefined
               }
               syncLoading={syncLoading}
+              finalizeLoading={finalizeLoading}
             />
           }
         >
