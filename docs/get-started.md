@@ -4,6 +4,10 @@ Get PinchTab running in a few minutes, from zero to browser automation.
 
 This guide covers the default local setup. If you plan to publish ports beyond localhost, bind to non-loopback interfaces, or run a remote or distributed topology, treat that as an advanced deployment and read the [Security guide](guides/security.md) first.
 
+If you are setting up this repo’s CloakBrowser + GCS-backed shared profiles workflow, use the dedicated guide instead:
+
+- [Cloak + Cloud Profile Get Started](guides/cloak-cloud-get-started.md)
+
 ---
 
 ## Installation

@@ -11,6 +11,7 @@
   "guides": [
     "guides/contributing.md",
     "guides/security.md",
+    "guides/cloak-cloud-get-started.md",
     "guides/mcp-agents.md",
     "guides/attach-chrome.md",
     "guides/remote-bridge-orchestrator.md",
