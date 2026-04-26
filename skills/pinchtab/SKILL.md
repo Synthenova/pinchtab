@@ -30,6 +30,7 @@ Preferred tool surface:
 - Use `pinchtab` CLI commands first.
 - Use `curl` for profile-management routes or non-shell/API fallback flows.
 - Use `jq` only when you need structured parsing from JSON responses.
+- The skill reference `references/api.md` includes multipart upload, cloud profile discover/import, sync, and finalize recovery routes.
 
 ## Agent Identity And Attribution
 

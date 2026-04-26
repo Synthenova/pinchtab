@@ -233,7 +233,23 @@ curl "/download?url=https://site.com/export.csv&output=file&path=/tmp/pinchtab-e
 Only upload local files the user explicitly provided or approved for the task.
 
 ```bash
-# Upload a local file to a file input
+# Upload a local file to a file input with multipart/form-data (preferred)
+curl -X POST "/tabs/TAB_ID/upload" \
+  -F 'selector=input[type=file]' \
+  -F 'file=@/absolute/path/provided-by-user.jpg'
+
+# Equivalent tabId query form
+curl -X POST "/upload?tabId=TAB_ID" \
+  -F 'selector=#avatar-input' \
+  -F 'file=@/absolute/path/provided-by-user.mp4'
+
+# Upload multiple files with multipart/form-data
+curl -X POST "/tabs/TAB_ID/upload" \
+  -F 'selector=input[type=file]' \
+  -F 'file=@/absolute/path/one.pdf' \
+  -F 'file=@/absolute/path/two.pdf'
+
+# Upload a sandbox/local path via JSON
 curl -X POST "/upload?tabId=TAB_ID" -H "Content-Type: application/json" \
   -d '{"selector": "input[type=file]", "paths": ["/tmp/user-approved-photo.jpg"]}'
 
@@ -243,6 +259,84 @@ curl -X POST /upload -H "Content-Type: application/json" \
 ```
 
 Sets files on `<input type=file>` elements via CDP. Fires `change` events. Selector defaults to `input[type=file]` if omitted.
+
+Notes:
+
+- Prefer multipart upload for remote/VPS-to-PinchTab flows.
+- Multipart upload stages a temporary local file on the PinchTab machine first.
+- Normal PinchTab backend cleans staged upload files when the tab is closed.
+- Cloak-backed uploads are staged through the Cloak Manager upload-stage API and cleaned on tab close there as well.
+
+## Cloud profiles
+
+PinchTab supports cloud-backed `pinchtab` profiles with discovery, import, pre-launch sync, and async finalize status.
+
+### Discover cloud profiles
+
+```bash
+curl -X POST /profiles/cloud/discover \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "bucket": "conthunt-dev-pinchtab-profiles",
+    "prefix": "pinchtab/profiles",
+    "credentialPath": "/path/to/gcs-bucket-ops.json"
+  }'
+```
+
+### Import/attach a cloud profile
+
+```bash
+curl -X POST /profiles/cloud/import \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "Layer Headed",
+    "bucket": "conthunt-dev-pinchtab-profiles",
+    "prefix": "pinchtab/profiles",
+    "credentialPath": "/path/to/gcs-bucket-ops.json",
+    "profileId": "cp_fe7b48fc31fa45f08e063b4fc103835f",
+    "keepLocalCache": true
+  }'
+```
+
+### Start or poll pre-launch sync
+
+If a cloud-backed profile is not locally ready, launch can return `profile_sync_in_progress`. Use these endpoints:
+
+```bash
+curl -X POST /profiles/PROFILE_ID/sync
+curl /profiles/PROFILE_ID/sync
+```
+
+Common sync states:
+
+- `queued`
+- `checking`
+- `downloading`
+- `extracting`
+- `ready`
+- `error`
+
+### Cloud finalize status after stop
+
+Cloud-backed profiles can continue uploading after the browser stops. Poll finalize status and recover if needed:
+
+```bash
+curl /profiles/PROFILE_ID/cloud/finalize
+curl -X POST /profiles/PROFILE_ID/cloud/retry-upload
+curl -X POST /profiles/PROFILE_ID/cloud/discard-local
+```
+
+Common finalize states:
+
+- `queued`
+- `archiving`
+- `uploading`
+- `updating-latest`
+- `releasing-lease`
+- `idle`
+- `error`
+
+`discard-local` releases the lease and discards unsynced local changes. The cloud copy remains intact and can be imported again later.
 
 ## Screenshot
 
