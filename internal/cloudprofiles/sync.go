@@ -36,8 +36,12 @@ type syncJob struct {
 }
 
 var (
-	syncMu   sync.Mutex
-	syncJobs = map[string]*syncJob{}
+	syncMu                       sync.Mutex
+	syncJobs                     = map[string]*syncJob{}
+	preparedSessionReleaseDelay  = 15 * time.Second
+	preparedSessionReleaseAction = func(session *Session) error {
+		return Release(context.Background(), session)
+	}
 )
 
 func syncKey(profilePath string, cfg *bridge.ProfileCloudConfig) string {
@@ -53,6 +57,29 @@ func updateJobStatus(job *syncJob, fn func(*SyncStatus)) {
 	defer syncMu.Unlock()
 	fn(&job.status)
 	job.status.UpdatedAt = time.Now().UTC()
+}
+
+func startPreparedSessionReleaseTimer(key string, job *syncJob, session *Session) {
+	time.AfterFunc(preparedSessionReleaseDelay, func() {
+		syncMu.Lock()
+		current := syncJobs[key]
+		if current != job || current == nil || current.status.State != "ready" || current.session != session {
+			syncMu.Unlock()
+			return
+		}
+		current.session = nil
+		current.status.State = "releasing"
+		current.status.UpdatedAt = time.Now().UTC()
+		syncMu.Unlock()
+
+		_ = preparedSessionReleaseAction(session)
+
+		syncMu.Lock()
+		defer syncMu.Unlock()
+		if latest := syncJobs[key]; latest == job && latest.session == nil && latest.status.State == "releasing" {
+			delete(syncJobs, key)
+		}
+	})
 }
 
 func ConsumePreparedSession(profilePath string, cfg *bridge.ProfileCloudConfig) (*Session, *SyncStatus) {
@@ -341,6 +368,7 @@ func StartSync(ctx context.Context, profileName, profilePath string, cfg *bridge
 		defer syncMu.Unlock()
 		if current := syncJobs[key]; current == job {
 			current.session = session
+			startPreparedSessionReleaseTimer(key, current, session)
 		}
 	}()
 
