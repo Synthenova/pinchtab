@@ -899,6 +899,71 @@ func Status(ctx context.Context, profilePath string, cfg *bridge.ProfileCloudCon
 	return status, nil
 }
 
+func LocalStatus(profilePath string, cfg *bridge.ProfileCloudConfig) *bridge.ProfileCloudStatus {
+	cfg = normalizeConfig(cfg)
+	if !Enabled(cfg) {
+		return nil
+	}
+
+	key := finalizeKey(profilePath, cfg)
+	finalizeMu.Lock()
+	if existing := finalizeJobs[key]; existing != nil {
+		status := existing.status
+		finalizeMu.Unlock()
+		switch status.State {
+		case "queued", "archiving", "uploading", "updating-latest", "releasing-lease":
+			return &bridge.ProfileCloudStatus{
+				State:         "stopped-uploading",
+				RemoteVersion: status.RemoteVersion,
+				LocalVersion:  status.LocalVersion,
+				Progress:      status.Progress,
+				Message:       status.State,
+			}
+		case "error":
+			return &bridge.ProfileCloudStatus{
+				State:         "upload-failed",
+				RemoteVersion: status.RemoteVersion,
+				LocalVersion:  status.LocalVersion,
+				Message:       status.Error,
+			}
+		}
+	} else {
+		finalizeMu.Unlock()
+	}
+
+	skey := syncKey(profilePath, cfg)
+	syncMu.Lock()
+	if existing := syncJobs[skey]; existing != nil {
+		status := existing.status
+		syncMu.Unlock()
+		return &bridge.ProfileCloudStatus{
+			State:         status.State,
+			RemoteVersion: status.RemoteVersion,
+			LocalVersion:  status.LocalVersion,
+			Message:       status.Error,
+		}
+	}
+	syncMu.Unlock()
+
+	state := readLocalState(profilePath)
+	status := &bridge.ProfileCloudStatus{
+		LocalVersion: state.LastSyncedVersion,
+		LastSyncAt:   state.LastSyncedAt,
+		Message:      state.LastError,
+		State:        "available",
+	}
+	if state.LastFinalizeState == "upload-failed" {
+		status.State = "upload-failed"
+	}
+	if state.LastError != "" {
+		status.State = "error"
+	}
+	if state.LastSyncedVersion != "" {
+		status.State = "cached"
+	}
+	return status
+}
+
 func Discover(ctx context.Context, cfg *bridge.ProfileCloudConfig) ([]DiscoveredProfile, error) {
 	cfg = normalizeConfig(cfg)
 	client, err := New(ctx, cfg)

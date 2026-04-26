@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -527,45 +528,40 @@ func (pm *ProfileManager) handleUpdateMeta(w http.ResponseWriter, r *http.Reques
 
 func (pm *ProfileManager) handleGetByID(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-
-	profiles, err := pm.List()
+	name, err := pm.resolveIDOrName(id)
+	if err != nil {
+		httpx.Error(w, 404, fmt.Errorf("profile %q not found", id))
+		return
+	}
+	dir, err := pm.profileDir(name)
+	if err != nil {
+		httpx.Error(w, 404, fmt.Errorf("profile %q not found", id))
+		return
+	}
+	info, err := pm.profileInfo(filepath.Base(dir))
 	if err != nil {
 		httpx.Error(w, 500, err)
 		return
 	}
 
-	var foundProfile map[string]any
-
-	for _, p := range profiles {
-		if p.ID != id && p.Name != id {
-			continue
-		}
-		foundProfile = map[string]any{
-			"id":                p.ID,
-			"name":              p.Name,
-			"path":              p.Path,
-			"pathExists":        p.PathExists,
-			"created":           p.Created,
-			"diskUsage":         p.DiskUsage,
-			"sizeMB":            float64(p.DiskUsage) / (1024 * 1024),
-			"source":            p.Source,
-			"chromeProfileName": p.ChromeProfileName,
-			"accountEmail":      p.AccountEmail,
-			"accountName":       p.AccountName,
-			"hasAccount":        p.HasAccount,
-			"useWhen":           p.UseWhen,
-			"description":       p.Description,
-			"backend":           p.Backend,
-		}
-		break
-	}
-
-	if foundProfile == nil {
-		httpx.Error(w, 404, fmt.Errorf("profile %q not found", id))
-		return
-	}
-
-	httpx.JSON(w, 200, foundProfile)
+	httpx.JSON(w, 200, map[string]any{
+		"id":                info.ID,
+		"name":              info.Name,
+		"path":              info.Path,
+		"pathExists":        true,
+		"created":           info.CreatedAt,
+		"diskUsage":         int64(info.SizeMB * 1024 * 1024),
+		"sizeMB":            info.SizeMB,
+		"source":            info.Source,
+		"chromeProfileName": info.ChromeProfileName,
+		"accountEmail":      info.AccountEmail,
+		"accountName":       info.AccountName,
+		"hasAccount":        info.HasAccount,
+		"useWhen":           info.UseWhen,
+		"description":       info.Description,
+		"backend":           info.Backend,
+		"cloudStatus":       info.CloudStatus,
+	})
 }
 
 func (pm *ProfileManager) handleDeleteByID(w http.ResponseWriter, r *http.Request) {

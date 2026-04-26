@@ -1,9 +1,7 @@
 package profiles
 
 import (
-	"context"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"net/url"
 	"os"
@@ -182,7 +180,7 @@ func (pm *ProfileManager) ProfilePath(name string) (string, error) {
 	return pm.profileDir(name)
 }
 
-func (pm *ProfileManager) List() ([]bridge.ProfileInfo, error) {
+func (pm *ProfileManager) listProfileDirNames() ([]string, error) {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
@@ -191,18 +189,31 @@ func (pm *ProfileManager) List() ([]bridge.ProfileInfo, error) {
 		return nil, err
 	}
 
-	profiles := []bridge.ProfileInfo{}
+	names := make([]string, 0, len(entries))
 	skip := map[string]bool{"bin": true, "profiles": true}
 	for _, entry := range entries {
 		if !entry.IsDir() || skip[entry.Name()] {
 			continue
 		}
-		info, err := pm.profileInfo(entry.Name())
+		names = append(names, entry.Name())
+	}
+	return names, nil
+}
+
+func (pm *ProfileManager) List() ([]bridge.ProfileInfo, error) {
+	dirNames, err := pm.listProfileDirNames()
+	if err != nil {
+		return nil, err
+	}
+
+	profiles := []bridge.ProfileInfo{}
+	for _, dirName := range dirNames {
+		info, err := pm.profileInfo(dirName)
 		if err != nil {
 			continue
 		}
 
-		if _, err := os.Stat(filepath.Join(pm.baseDir, entry.Name(), "Default")); err != nil {
+		if _, err := os.Stat(filepath.Join(pm.baseDir, dirName, "Default")); err != nil {
 			continue
 		}
 
@@ -246,7 +257,6 @@ func (pm *ProfileManager) profileInfo(dirName string) (ProfileDetailedInfo, erro
 		return ProfileDetailedInfo{}, err
 	}
 
-	size := dirSizeMB(dir)
 	source := "created"
 	if _, err := os.Stat(filepath.Join(dir, ".pinchtab-imported")); err == nil {
 		source = "imported"
@@ -277,7 +287,7 @@ func (pm *ProfileManager) profileInfo(dirName string) (ProfileDetailedInfo, erro
 		Name:              profileName,
 		Path:              dir,
 		CreatedAt:         fi.ModTime(),
-		SizeMB:            size,
+		SizeMB:            0,
 		Source:            source,
 		ChromeProfileName: chromeProfileName,
 		AccountEmail:      accountEmail,
@@ -294,14 +304,7 @@ func readProfileCloudStatus(dir string, backend *bridge.ProfileBackend) *bridge.
 	if backend == nil || backend.Kind != "pinchtab" || backend.PinchTab == nil || !cloudprofiles.Enabled(backend.PinchTab.Cloud) {
 		return nil
 	}
-	status, err := cloudprofiles.Status(context.Background(), dir, backend.PinchTab.Cloud)
-	if err != nil {
-		return &bridge.ProfileCloudStatus{
-			State:   "error",
-			Message: err.Error(),
-		}
-	}
-	return status
+	return cloudprofiles.LocalStatus(dir, backend.PinchTab.Cloud)
 }
 
 func normalizeProfileBackend(backend *bridge.ProfileBackend) *bridge.ProfileBackend {
@@ -651,21 +654,6 @@ func (pm *ProfileManager) Logs(name string, limit int) []bridge.ActionRecord {
 
 func (pm *ProfileManager) Analytics(name string) bridge.AnalyticsReport {
 	return analyticsFromActionRecords(pm.logsFromActivity(name, 1000))
-}
-
-func dirSizeMB(path string) float64 {
-	var total int64
-	_ = filepath.WalkDir(path, func(_ string, entry fs.DirEntry, err error) error {
-		if err != nil || entry.IsDir() {
-			return nil
-		}
-		info, err := entry.Info()
-		if err == nil {
-			total += info.Size()
-		}
-		return nil
-	})
-	return float64(total) / (1024 * 1024)
 }
 
 func (pm *ProfileManager) logsFromActivity(name string, limit int) []bridge.ActionRecord {
