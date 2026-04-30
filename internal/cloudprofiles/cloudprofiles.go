@@ -15,6 +15,8 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"regexp"
+	goruntime "runtime"
 	"sort"
 	"strings"
 	"time"
@@ -36,15 +38,19 @@ const (
 )
 
 type remoteMeta struct {
-	ProfileID      string    `json:"profileId"`
-	Name           string    `json:"name"`
-	UpdatedAt      time.Time `json:"updatedAt"`
-	ProxyURL       string    `json:"proxyUrl,omitempty"`
-	Timezone       string    `json:"timezone,omitempty"`
-	Locale         string    `json:"locale,omitempty"`
-	Binary         string    `json:"binary,omitempty"`
-	BrowserVersion string    `json:"browserVersion,omitempty"`
-	LaunchArgs     []string  `json:"launchArgs,omitempty"`
+	ProfileID           string    `json:"profileId"`
+	Name                string    `json:"name"`
+	UpdatedAt           time.Time `json:"updatedAt"`
+	ProxyURL            string    `json:"proxyUrl,omitempty"`
+	Timezone            string    `json:"timezone,omitempty"`
+	Locale              string    `json:"locale,omitempty"`
+	Binary              string    `json:"binary,omitempty"`
+	BrowserVersion      string    `json:"browserVersion,omitempty"`
+	FingerprintSeed     string    `json:"fingerprintSeed,omitempty"`
+	FingerprintPlatform string    `json:"fingerprintPlatform,omitempty"`
+	FingerprintTimezone string    `json:"fingerprintTimezone,omitempty"`
+	StorageQuota        string    `json:"storageQuota,omitempty"`
+	LaunchArgs          []string  `json:"launchArgs,omitempty"`
 }
 
 type latestVersion struct {
@@ -82,15 +88,19 @@ type Session struct {
 }
 
 type DiscoveredProfile struct {
-	ProfileID      string    `json:"profileId"`
-	Name           string    `json:"name"`
-	UpdatedAt      time.Time `json:"updatedAt"`
-	ProxyURL       string    `json:"proxyUrl,omitempty"`
-	Timezone       string    `json:"timezone,omitempty"`
-	Locale         string    `json:"locale,omitempty"`
-	Binary         string    `json:"binary,omitempty"`
-	BrowserVersion string    `json:"browserVersion,omitempty"`
-	LaunchArgs     []string  `json:"launchArgs,omitempty"`
+	ProfileID           string    `json:"profileId"`
+	Name                string    `json:"name"`
+	UpdatedAt           time.Time `json:"updatedAt"`
+	ProxyURL            string    `json:"proxyUrl,omitempty"`
+	Timezone            string    `json:"timezone,omitempty"`
+	Locale              string    `json:"locale,omitempty"`
+	Binary              string    `json:"binary,omitempty"`
+	BrowserVersion      string    `json:"browserVersion,omitempty"`
+	FingerprintSeed     string    `json:"fingerprintSeed,omitempty"`
+	FingerprintPlatform string    `json:"fingerprintPlatform,omitempty"`
+	FingerprintTimezone string    `json:"fingerprintTimezone,omitempty"`
+	StorageQuota        string    `json:"storageQuota,omitempty"`
+	LaunchArgs          []string  `json:"launchArgs,omitempty"`
 }
 
 type Client struct {
@@ -250,28 +260,310 @@ func settingsSnapshot(settings *bridge.ProfileBackendPinchTab) remoteMeta {
 	if settings == nil {
 		return remoteMeta{}
 	}
+	fingerprintSeed := launchArgValue(settings.LaunchArgs, "--fingerprint=")
+	fingerprintPlatform := launchArgValue(settings.LaunchArgs, "--fingerprint-platform=")
+	fingerprintTimezone := launchArgValue(settings.LaunchArgs, "--fingerprint-timezone=")
+	storageQuota := launchArgValue(settings.LaunchArgs, "--fingerprint-storage-quota=")
+	if fingerprintTimezone == "" {
+		fingerprintTimezone = strings.TrimSpace(settings.Timezone)
+	}
 	return remoteMeta{
-		ProxyURL:       strings.TrimSpace(settings.ProxyURL),
-		Timezone:       strings.TrimSpace(settings.Timezone),
-		Locale:         strings.TrimSpace(settings.Locale),
-		Binary:         strings.TrimSpace(settings.Binary),
-		BrowserVersion: strings.TrimSpace(settings.BrowserVersion),
-		LaunchArgs:     append([]string(nil), settings.LaunchArgs...),
+		ProxyURL:            strings.TrimSpace(settings.ProxyURL),
+		Timezone:            strings.TrimSpace(settings.Timezone),
+		Locale:              strings.TrimSpace(settings.Locale),
+		Binary:              strings.TrimSpace(settings.Binary),
+		BrowserVersion:      strings.TrimSpace(settings.BrowserVersion),
+		FingerprintSeed:     fingerprintSeed,
+		FingerprintPlatform: fingerprintPlatform,
+		FingerprintTimezone: fingerprintTimezone,
+		StorageQuota:        storageQuota,
+		LaunchArgs:          append([]string(nil), settings.LaunchArgs...),
 	}
 }
 
+func launchArgValue(args []string, prefix string) string {
+	for _, arg := range args {
+		trimmed := strings.TrimSpace(arg)
+		if strings.HasPrefix(trimmed, prefix) {
+			return strings.TrimSpace(strings.TrimPrefix(trimmed, prefix))
+		}
+	}
+	return ""
+}
+
+func normalizeLaunchArgs(args []string) []string {
+	if len(args) == 0 {
+		return nil
+	}
+	normalized := make([]string, 0, len(args))
+	for _, arg := range args {
+		trimmed := strings.TrimSpace(arg)
+		if trimmed == "" {
+			continue
+		}
+		normalized = append(normalized, trimmed)
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
+}
+
+func isCloakBackedPinchTab(settings *bridge.ProfileBackendPinchTab) bool {
+	if settings == nil {
+		return false
+	}
+	binary := strings.ToLower(strings.TrimSpace(settings.Binary))
+	return strings.Contains(binary, ".cloakbrowser") && strings.Contains(binary, "chromium-")
+}
+
+func validateFrozenIdentity(settings *bridge.ProfileBackendPinchTab) error {
+	if settings == nil || !isCloakBackedPinchTab(settings) {
+		return nil
+	}
+	if strings.TrimSpace(settings.ProxyURL) == "" {
+		return fmt.Errorf("cloud-shared cloak profile requires proxyUrl")
+	}
+	if strings.TrimSpace(settings.Timezone) == "" {
+		return fmt.Errorf("cloud-shared cloak profile requires timezone")
+	}
+	if strings.TrimSpace(settings.Locale) == "" {
+		return fmt.Errorf("cloud-shared cloak profile requires locale")
+	}
+	if strings.TrimSpace(settings.Binary) == "" {
+		return fmt.Errorf("cloud-shared cloak profile requires binary")
+	}
+	if strings.TrimSpace(settings.BrowserVersion) == "" {
+		return fmt.Errorf("cloud-shared cloak profile requires browserVersion")
+	}
+	if launchArgValue(settings.LaunchArgs, "--fingerprint=") == "" {
+		return fmt.Errorf("cloud-shared cloak profile requires --fingerprint")
+	}
+	if launchArgValue(settings.LaunchArgs, "--fingerprint-platform=") == "" {
+		return fmt.Errorf("cloud-shared cloak profile requires --fingerprint-platform")
+	}
+	if launchArgValue(settings.LaunchArgs, "--fingerprint-storage-quota=") == "" {
+		return fmt.Errorf("cloud-shared cloak profile requires --fingerprint-storage-quota")
+	}
+	if launchArgValue(settings.LaunchArgs, "--fingerprint-timezone=") == "" && strings.TrimSpace(settings.Timezone) == "" {
+		return fmt.Errorf("cloud-shared cloak profile requires fingerprint timezone")
+	}
+	return nil
+}
+
+func defaultFingerprintPlatform() string {
+	if goruntime.GOOS == "darwin" {
+		return "macos"
+	}
+	return "windows"
+}
+
+func deterministicFingerprintSeed(source string) string {
+	trimmed := strings.TrimSpace(source)
+	if trimmed == "" {
+		trimmed = "pinchtab"
+	}
+	sum := sha256.Sum256([]byte(trimmed))
+	n := int(sum[0])<<8 | int(sum[1])
+	return fmt.Sprintf("%d", 10000+(n%90000))
+}
+
+func upsertLaunchArg(args []string, prefix, value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return normalizeLaunchArgs(args)
+	}
+	next := make([]string, 0, len(args)+1)
+	replaced := false
+	for _, arg := range normalizeLaunchArgs(args) {
+		if strings.HasPrefix(arg, prefix) {
+			if !replaced {
+				next = append(next, prefix+value)
+				replaced = true
+			}
+			continue
+		}
+		next = append(next, arg)
+	}
+	if !replaced {
+		next = append(next, prefix+value)
+	}
+	return next
+}
+
+func applyFrozenIdentityDefaults(cfg *bridge.ProfileCloudConfig, settings *bridge.ProfileBackendPinchTab) *bridge.ProfileBackendPinchTab {
+	if settings == nil {
+		return nil
+	}
+	copy := *settings
+	copy.LaunchArgs = append([]string(nil), settings.LaunchArgs...)
+	if !isCloakBackedPinchTab(&copy) {
+		return &copy
+	}
+	if strings.TrimSpace(copy.BrowserVersion) == "" && strings.TrimSpace(copy.Binary) != "" {
+		copy.BrowserVersion = inferBrowserVersionFromBinaryPath(copy.Binary)
+	}
+	if strings.TrimSpace(copy.Locale) == "" {
+		if lang := launchArgValue(copy.LaunchArgs, "--lang="); lang != "" {
+			copy.Locale = lang
+		} else if locale := launchArgValue(copy.LaunchArgs, "--fingerprint-locale="); locale != "" {
+			copy.Locale = locale
+		} else {
+			copy.Locale = "en-US"
+		}
+	}
+	if strings.TrimSpace(copy.Timezone) == "" {
+		copy.Timezone = launchArgValue(copy.LaunchArgs, "--fingerprint-timezone=")
+	}
+	seed := launchArgValue(copy.LaunchArgs, "--fingerprint=")
+	if seed == "" {
+		seed = deterministicFingerprintSeed(strings.TrimSpace(cfg.ProfileID) + "|" + strings.TrimSpace(copy.ProxyURL) + "|" + strings.TrimSpace(copy.Binary))
+	}
+	copy.LaunchArgs = upsertLaunchArg(copy.LaunchArgs, "--fingerprint=", seed)
+
+	platform := launchArgValue(copy.LaunchArgs, "--fingerprint-platform=")
+	if platform == "" {
+		platform = defaultFingerprintPlatform()
+	}
+	copy.LaunchArgs = upsertLaunchArg(copy.LaunchArgs, "--fingerprint-platform=", platform)
+
+	quota := launchArgValue(copy.LaunchArgs, "--fingerprint-storage-quota=")
+	if quota == "" {
+		quota = "10000"
+	}
+	copy.LaunchArgs = upsertLaunchArg(copy.LaunchArgs, "--fingerprint-storage-quota=", quota)
+
+	if strings.TrimSpace(copy.Timezone) != "" {
+		copy.LaunchArgs = upsertLaunchArg(copy.LaunchArgs, "--fingerprint-timezone=", strings.TrimSpace(copy.Timezone))
+	}
+	if strings.TrimSpace(copy.Locale) != "" {
+		copy.LaunchArgs = upsertLaunchArg(copy.LaunchArgs, "--lang=", strings.TrimSpace(copy.Locale))
+		copy.LaunchArgs = upsertLaunchArg(copy.LaunchArgs, "--fingerprint-locale=", strings.TrimSpace(copy.Locale))
+	}
+	return &copy
+}
+
+func mergeFrozenMeta(existing *remoteMeta, next remoteMeta) remoteMeta {
+	if existing == nil {
+		return next
+	}
+	merged := next
+	if strings.TrimSpace(existing.ProxyURL) != "" {
+		merged.ProxyURL = strings.TrimSpace(existing.ProxyURL)
+	}
+	if strings.TrimSpace(existing.Timezone) != "" {
+		merged.Timezone = strings.TrimSpace(existing.Timezone)
+	}
+	if strings.TrimSpace(existing.Locale) != "" {
+		merged.Locale = strings.TrimSpace(existing.Locale)
+	}
+	if strings.TrimSpace(existing.Binary) != "" {
+		merged.Binary = strings.TrimSpace(existing.Binary)
+	}
+	if strings.TrimSpace(existing.BrowserVersion) != "" {
+		merged.BrowserVersion = strings.TrimSpace(existing.BrowserVersion)
+	}
+	if strings.TrimSpace(existing.FingerprintSeed) != "" {
+		merged.FingerprintSeed = strings.TrimSpace(existing.FingerprintSeed)
+	}
+	if strings.TrimSpace(existing.FingerprintPlatform) != "" {
+		merged.FingerprintPlatform = strings.TrimSpace(existing.FingerprintPlatform)
+	}
+	if strings.TrimSpace(existing.FingerprintTimezone) != "" {
+		merged.FingerprintTimezone = strings.TrimSpace(existing.FingerprintTimezone)
+	}
+	if strings.TrimSpace(existing.StorageQuota) != "" {
+		merged.StorageQuota = strings.TrimSpace(existing.StorageQuota)
+	}
+	if len(existing.LaunchArgs) > 0 {
+		merged.LaunchArgs = append([]string(nil), existing.LaunchArgs...)
+	}
+	return merged
+}
+
+func metaToSettings(meta remoteMeta, fallback *bridge.ProfileBackendPinchTab) *bridge.ProfileBackendPinchTab {
+	var resolved bridge.ProfileBackendPinchTab
+	if fallback != nil {
+		resolved = *fallback
+		resolved.LaunchArgs = append([]string(nil), fallback.LaunchArgs...)
+	}
+	if strings.TrimSpace(meta.ProxyURL) != "" {
+		resolved.ProxyURL = strings.TrimSpace(meta.ProxyURL)
+	}
+	if strings.TrimSpace(meta.Timezone) != "" {
+		resolved.Timezone = strings.TrimSpace(meta.Timezone)
+	}
+	if strings.TrimSpace(meta.Locale) != "" {
+		resolved.Locale = strings.TrimSpace(meta.Locale)
+	}
+	if strings.TrimSpace(meta.Binary) != "" {
+		resolved.Binary = strings.TrimSpace(meta.Binary)
+	}
+	if strings.TrimSpace(meta.BrowserVersion) != "" {
+		resolved.BrowserVersion = strings.TrimSpace(meta.BrowserVersion)
+	}
+	if len(meta.LaunchArgs) > 0 {
+		resolved.LaunchArgs = append([]string(nil), meta.LaunchArgs...)
+	}
+	return &resolved
+}
+
+func ResolveEffectiveSettings(ctx context.Context, cfg *bridge.ProfileCloudConfig, settings *bridge.ProfileBackendPinchTab) (*bridge.ProfileBackendPinchTab, error) {
+	cfg = normalizeConfig(cfg)
+	resolved := applyFrozenIdentityDefaults(cfg, metaToSettings(remoteMeta{}, settings))
+	if !Enabled(cfg) {
+		return resolved, validateFrozenIdentity(resolved)
+	}
+	client, err := New(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = client.Close() }()
+	var meta remoteMeta
+	if ok, _, err := loadJSON(ctx, client.object("meta.json"), &meta); err != nil {
+		return nil, err
+	} else if ok {
+		resolved = applyFrozenIdentityDefaults(cfg, metaToSettings(meta, resolved))
+	}
+	if resolved.BrowserVersion == "" && strings.TrimSpace(resolved.Binary) != "" {
+		resolved.BrowserVersion = inferBrowserVersionFromBinaryPath(resolved.Binary)
+	}
+	return resolved, validateFrozenIdentity(resolved)
+}
+
+var cloakBinaryVersionPattern = regexp.MustCompile(`(?:^|[/\\])chromium-(\d+\.\d+\.\d+\.\d+)(?:\.\d+)?(?:[/\\]|$)`)
+
+func inferBrowserVersionFromBinaryPath(binary string) string {
+	matches := cloakBinaryVersionPattern.FindStringSubmatch(strings.TrimSpace(binary))
+	if len(matches) < 2 {
+		return ""
+	}
+	return matches[1]
+}
+
 func (c *Client) ensureMeta(ctx context.Context, profileName string, settings *bridge.ProfileBackendPinchTab) error {
+	settings = applyFrozenIdentityDefaults(c.cfg, settings)
 	snapshot := settingsSnapshot(settings)
+	if err := validateFrozenIdentity(settings); err != nil {
+		return err
+	}
 	meta := remoteMeta{
-		ProfileID:      c.cfg.ProfileID,
-		Name:           profileName,
-		UpdatedAt:      time.Now().UTC(),
-		ProxyURL:       snapshot.ProxyURL,
-		Timezone:       snapshot.Timezone,
-		Locale:         snapshot.Locale,
-		Binary:         snapshot.Binary,
-		BrowserVersion: snapshot.BrowserVersion,
-		LaunchArgs:     snapshot.LaunchArgs,
+		ProfileID:           c.cfg.ProfileID,
+		Name:                profileName,
+		UpdatedAt:           time.Now().UTC(),
+		ProxyURL:            snapshot.ProxyURL,
+		Timezone:            snapshot.Timezone,
+		Locale:              snapshot.Locale,
+		Binary:              snapshot.Binary,
+		BrowserVersion:      snapshot.BrowserVersion,
+		FingerprintSeed:     snapshot.FingerprintSeed,
+		FingerprintPlatform: snapshot.FingerprintPlatform,
+		FingerprintTimezone: snapshot.FingerprintTimezone,
+		StorageQuota:        snapshot.StorageQuota,
+		LaunchArgs:          snapshot.LaunchArgs,
+	}
+	var existing remoteMeta
+	if ok, _, err := loadJSON(ctx, c.object("meta.json"), &existing); err == nil && ok {
+		meta = mergeFrozenMeta(&existing, meta)
 	}
 	return writeJSON(ctx, c.object("meta.json"), meta)
 }
@@ -384,6 +676,53 @@ func excludedPath(rel string) bool {
 	return strings.HasPrefix(base, "Singleton")
 }
 
+var portableSyncDirPrefixes = []string{
+	"Default/Local Storage",
+	"Default/IndexedDB",
+	"Default/Session Storage",
+	"Default/Extensions",
+	"Default/Extension State",
+	"Default/Local Extension Settings",
+	"Default/Sync Extension Settings",
+	"Default/Managed Extension Settings",
+}
+
+var portableSyncExactFiles = []string{
+	"Default/Bookmarks",
+	"Default/Cookies",
+	"Default/History",
+	"Default/History-journal",
+	"Default/Favicons",
+	"Default/Favicons-journal",
+	"Default/Visited Links",
+	"Default/Preferences",
+	"Default/Secure Preferences",
+	"Default/Login Data",
+	"Default/Login Data For Account",
+	"Default/Login Data-journal",
+	"Default/Login Data For Account-journal",
+	"Default/Network/Cookies",
+	"Default/Network/Cookies-journal",
+}
+
+func includedPortablePath(rel string) bool {
+	rel = filepath.ToSlash(strings.TrimSpace(rel))
+	if rel == "" || excludedPath(rel) {
+		return false
+	}
+	for _, exact := range portableSyncExactFiles {
+		if rel == exact {
+			return true
+		}
+	}
+	for _, prefix := range portableSyncDirPrefixes {
+		if rel == prefix || strings.HasPrefix(rel, prefix+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 func hashDirectory(root string) (string, error) {
 	h := sha256.New()
 	var files []string
@@ -404,10 +743,19 @@ func hashDirectory(root string) (string, error) {
 			}
 			return nil
 		}
+		if d.IsDir() {
+			relSlash := filepath.ToSlash(rel)
+			for _, prefix := range portableSyncDirPrefixes {
+				if relSlash == prefix || strings.HasPrefix(prefix, relSlash+"/") {
+					return nil
+				}
+			}
+			return nil
+		}
 		if d.Type()&os.ModeSymlink != 0 {
 			return nil
 		}
-		if d.IsDir() {
+		if !includedPortablePath(rel) {
 			return nil
 		}
 		files = append(files, rel)
@@ -447,17 +795,12 @@ func hashDirectory(root string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func clearProfileData(profilePath string) error {
-	entries, err := os.ReadDir(profilePath)
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	for _, entry := range entries {
-		name := entry.Name()
-		if name == "profile.json" || name == ".pinchtab-cloud-state.json" {
-			continue
-		}
-		if err := os.RemoveAll(filepath.Join(profilePath, name)); err != nil {
+func clearPortableState(profilePath string) error {
+	candidates := append([]string{}, portableSyncExactFiles...)
+	candidates = append(candidates, portableSyncDirPrefixes...)
+	for _, rel := range candidates {
+		target := filepath.Join(profilePath, filepath.FromSlash(rel))
+		if err := os.RemoveAll(target); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 	}
@@ -490,7 +833,23 @@ func archiveDirectory(root string) (string, int64, string, error) {
 			}
 			return nil
 		}
+		if info.IsDir() {
+			relSlash := filepath.ToSlash(rel)
+			includeDir := false
+			for _, prefix := range portableSyncDirPrefixes {
+				if relSlash == prefix || strings.HasPrefix(prefix, relSlash+"/") {
+					includeDir = true
+					break
+				}
+			}
+			if !includeDir {
+				return nil
+			}
+		}
 		if info.Mode()&os.ModeSymlink != 0 {
+			return nil
+		}
+		if !info.IsDir() && !includedPortablePath(rel) {
 			return nil
 		}
 		header, err := tar.FileInfoHeader(info, "")
@@ -535,7 +894,7 @@ func archiveDirectory(root string) (string, int64, string, error) {
 }
 
 func extractArchive(archivePath, dest string) error {
-	if err := clearProfileData(dest); err != nil {
+	if err := clearPortableState(dest); err != nil {
 		return err
 	}
 	f, err := os.Open(archivePath)
@@ -797,7 +1156,7 @@ func Finalize(ctx context.Context, profilePath string, session *Session) error {
 		return err
 	}
 	if session.Config.KeepLocalCache != nil && !*session.Config.KeepLocalCache {
-		if err := clearProfileData(profilePath); err != nil {
+		if err := clearPortableState(profilePath); err != nil {
 			return err
 		}
 	}
@@ -996,15 +1355,19 @@ func Discover(ctx context.Context, cfg *bridge.ProfileCloudConfig) ([]Discovered
 			continue
 		}
 		profiles = append(profiles, DiscoveredProfile{
-			ProfileID:      meta.ProfileID,
-			Name:           meta.Name,
-			UpdatedAt:      meta.UpdatedAt,
-			ProxyURL:       meta.ProxyURL,
-			Timezone:       meta.Timezone,
-			Locale:         meta.Locale,
-			Binary:         meta.Binary,
-			BrowserVersion: meta.BrowserVersion,
-			LaunchArgs:     append([]string(nil), meta.LaunchArgs...),
+			ProfileID:           meta.ProfileID,
+			Name:                meta.Name,
+			UpdatedAt:           meta.UpdatedAt,
+			ProxyURL:            meta.ProxyURL,
+			Timezone:            meta.Timezone,
+			Locale:              meta.Locale,
+			Binary:              meta.Binary,
+			BrowserVersion:      meta.BrowserVersion,
+			FingerprintSeed:     meta.FingerprintSeed,
+			FingerprintPlatform: meta.FingerprintPlatform,
+			FingerprintTimezone: meta.FingerprintTimezone,
+			StorageQuota:        meta.StorageQuota,
+			LaunchArgs:          append([]string(nil), meta.LaunchArgs...),
 		})
 	}
 	sort.Slice(profiles, func(i, j int) bool {

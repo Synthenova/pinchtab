@@ -133,6 +133,7 @@ func setupAllocator(cfg *config.RuntimeConfig, bundle *stealth.Bundle, hooks Hoo
 		chromedp.NoFirstRun,
 		chromedp.NoDefaultBrowserCheck,
 	}
+	useCloakBinary := stealth.UsesCloakBrowserBinary(cfg)
 	opts = appendExecAllocatorFlags(opts, BaseChromeFlagArgs())
 	opts = appendExecAllocatorFlags(opts, bundle.Launch.Args)
 
@@ -185,7 +186,7 @@ func setupAllocator(cfg *config.RuntimeConfig, bundle *stealth.Bundle, hooks Hoo
 	w, h := randomWindowSize()
 	opts = append(opts, chromedp.WindowSize(w, h))
 
-	if cfg.Timezone != "" {
+	if cfg.Timezone != "" && !useCloakBinary {
 		opts = append(opts, chromedp.Flag("tz", cfg.Timezone))
 	}
 
@@ -424,6 +425,7 @@ func BuildChromeArgs(cfg *config.RuntimeConfig, port int) []string {
 
 func buildChromeArgsWithBundle(cfg *config.RuntimeConfig, bundle *stealth.Bundle, port int) []string {
 	bundle = ensureStealthBundle(cfg, bundle)
+	useCloakBinary := stealth.UsesCloakBrowserBinary(cfg)
 	args := append([]string{fmt.Sprintf("--remote-debugging-port=%d", port)}, BaseChromeFlagArgs()...)
 	args = append(args, bundle.Launch.Args...)
 
@@ -451,7 +453,7 @@ func buildChromeArgsWithBundle(cfg *config.RuntimeConfig, bundle *stealth.Bundle
 	w, h := randomWindowSize()
 	args = append(args, fmt.Sprintf("--window-size=%d,%d", w, h))
 
-	if cfg.Timezone != "" {
+	if cfg.Timezone != "" && !useCloakBinary {
 		args = append(args, "--tz="+cfg.Timezone)
 	}
 

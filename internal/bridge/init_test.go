@@ -37,6 +37,38 @@ func TestBuildChromeArgsIncludesStealthLaunchFlags(t *testing.T) {
 	}
 }
 
+func TestBuildChromeArgsCloakBinarySkipsPinchtabStealthFlags(t *testing.T) {
+	args := buildChromeArgs(&config.RuntimeConfig{
+		ChromeBinary:     "/Users/test/.cloakbrowser/chromium-145.0.7632.109.2/Chromium.app/Contents/MacOS/Chromium",
+		ChromeVersion:    "145.0.7632.109",
+		Timezone:         "Australia/Sydney",
+		ChromeExtraFlags: "--fingerprint=42069 --fingerprint-platform=windows --fingerprint-storage-quota=10000 --fingerprint-timezone=Australia/Sydney",
+	}, 9222)
+
+	for _, forbidden := range []string{
+		"--enable-automation=false",
+		"--disable-blink-features=AutomationControlled",
+		"--enable-network-information-downlink-max",
+		"--lang=en-US",
+		"--tz=Australia/Sydney",
+	} {
+		if slices.Contains(args, forbidden) {
+			t.Fatalf("did not expect cloak arg %q in %v", forbidden, args)
+		}
+	}
+	for _, want := range []string{
+		"--no-sandbox",
+		"--fingerprint-platform=windows",
+		"--fingerprint=42069",
+		"--fingerprint-storage-quota=10000",
+		"--fingerprint-timezone=Australia/Sydney",
+	} {
+		if !slices.Contains(args, want) {
+			t.Fatalf("missing cloak arg %q in %v", want, args)
+		}
+	}
+}
+
 func TestBuildChromeArgsHeadlessUsesSoftwareRendering(t *testing.T) {
 	args := buildChromeArgs(&config.RuntimeConfig{Headless: true}, 9222)
 

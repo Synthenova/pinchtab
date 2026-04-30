@@ -270,6 +270,15 @@ func (o *Orchestrator) startInstanceWithRequest(w http.ResponseWriter, r *http.R
 
 	headless := req.Mode != "headed"
 	proxyURL, extensionPaths := o.resolveSteelLaunchDefaults(profileName, req.ProxyURL, req.ExtensionPaths)
+	if req.ProfileID != "" {
+		if err := o.ensureProfileStartable(profileName); err != nil {
+			if writeLaunchError(w, err) {
+				return
+			}
+			httpx.Error(w, classifyLaunchError(err), err)
+			return
+		}
+	}
 	inst, err := o.LaunchWithOptions(profileName, req.Port, headless, extensionPaths, proxyURL)
 	if err != nil {
 		if writeLaunchError(w, err) {

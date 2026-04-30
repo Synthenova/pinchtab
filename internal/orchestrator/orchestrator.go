@@ -283,8 +283,7 @@ type pinchTabLaunchDefaults struct {
 	LaunchArgs     []string
 }
 
-func (o *Orchestrator) resolvePinchTabLaunchDefaults(profileName, proxyURL, timezone string) pinchTabLaunchDefaults {
-	backend := o.profileBackend(profileName)
+func pinchTabLaunchDefaultsFromSettings(backend *bridge.ProfileBackend, proxyURL, timezone string) pinchTabLaunchDefaults {
 	resolved := pinchTabLaunchDefaults{
 		ProxyURL: strings.TrimSpace(proxyURL),
 		Timezone: strings.TrimSpace(timezone),
@@ -496,7 +495,29 @@ func (o *Orchestrator) LaunchWithOptions(name, port string, headless bool, exten
 		externalBrowserWSURL = session.BrowserWSEndpoint
 		steelSessionID = session.ID
 	} else {
-		pinchTabDefaults := o.resolvePinchTabLaunchDefaults(name, "", "")
+		effectiveBackend := backend
+		if effectiveBackend == nil {
+			effectiveBackend = &bridge.ProfileBackend{Kind: "pinchtab", PinchTab: &bridge.ProfileBackendPinchTab{}}
+		}
+		if effectiveBackend.PinchTab == nil {
+			effectiveBackend.PinchTab = &bridge.ProfileBackendPinchTab{}
+		}
+		if strings.TrimSpace(effectiveBackend.PinchTab.Binary) == "" && o.runtimeCfg != nil {
+			effectiveBackend.PinchTab.Binary = strings.TrimSpace(o.runtimeCfg.ChromeBinary)
+		}
+		if strings.TrimSpace(effectiveBackend.PinchTab.BrowserVersion) == "" && o.runtimeCfg != nil {
+			effectiveBackend.PinchTab.BrowserVersion = strings.TrimSpace(o.runtimeCfg.ChromeVersion)
+		}
+		if effectiveBackend.Kind == "pinchtab" && effectiveBackend.PinchTab != nil && cloudprofiles.Enabled(effectiveBackend.PinchTab.Cloud) {
+			resolvedSettings, err := cloudprofiles.ResolveEffectiveSettings(context.Background(), effectiveBackend.PinchTab.Cloud, effectiveBackend.PinchTab)
+			if err != nil {
+				return nil, fmt.Errorf("resolve cloud profile settings: %w", err)
+			}
+			clone := *effectiveBackend
+			clone.PinchTab = resolvedSettings
+			effectiveBackend = &clone
+		}
+		pinchTabDefaults := pinchTabLaunchDefaultsFromSettings(effectiveBackend, "", "")
 		pinchTabProxyURL = pinchTabDefaults.ProxyURL
 		pinchTabTimezone = pinchTabDefaults.Timezone
 		pinchTabLocale = pinchTabDefaults.Locale
@@ -511,11 +532,11 @@ func (o *Orchestrator) LaunchWithOptions(name, port string, headless bool, exten
 			browserProxy = proxyServer
 			pinchTabProxyURL = proxyServer.URL()
 		}
-		if backend != nil && backend.PinchTab != nil && cloudprofiles.Enabled(backend.PinchTab.Cloud) {
-			if session, _ := cloudprofiles.ConsumePreparedSession(profilePath, backend.PinchTab.Cloud); session != nil {
+		if effectiveBackend != nil && effectiveBackend.PinchTab != nil && cloudprofiles.Enabled(effectiveBackend.PinchTab.Cloud) {
+			if session, _ := cloudprofiles.ConsumePreparedSession(profilePath, effectiveBackend.PinchTab.Cloud); session != nil {
 				cloudSession = session
 			} else {
-				status, err := cloudprofiles.StartSync(context.Background(), name, profilePath, backend.PinchTab.Cloud, backend.PinchTab)
+				status, err := cloudprofiles.StartSync(context.Background(), name, profilePath, effectiveBackend.PinchTab.Cloud, effectiveBackend.PinchTab)
 				if err != nil {
 					if browserProxy != nil {
 						_ = browserProxy.Close()
@@ -701,13 +722,38 @@ func buildProfileExtraFlags(base, timezone, locale string, launchArgs []string) 
 	if strings.TrimSpace(base) != "" {
 		flags = append(flags, strings.Fields(base)...)
 	}
+	normalizedLaunchArgs := normalizeLaunchArgs(launchArgs)
+	flags = append(flags, normalizedLaunchArgs...)
 	if timezone != "" {
-		flags = append(flags, "--fingerprint-timezone="+timezone)
+		hasTimezone := false
+		for _, arg := range normalizedLaunchArgs {
+			if strings.HasPrefix(arg, "--fingerprint-timezone=") {
+				hasTimezone = true
+				break
+			}
+		}
+		if !hasTimezone {
+			flags = append(flags, "--fingerprint-timezone="+timezone)
+		}
 	}
 	if locale != "" {
-		flags = append(flags, "--lang="+locale, "--fingerprint-locale="+locale)
+		hasLang := false
+		hasFingerprintLocale := false
+		for _, arg := range normalizedLaunchArgs {
+			if strings.HasPrefix(arg, "--lang=") {
+				hasLang = true
+			}
+			if strings.HasPrefix(arg, "--fingerprint-locale=") {
+				hasFingerprintLocale = true
+			}
+		}
+		if !hasLang {
+			flags = append(flags, "--lang="+locale)
+		}
+		if !hasFingerprintLocale {
+			flags = append(flags, "--fingerprint-locale="+locale)
+		}
 	}
-	flags = append(flags, normalizeLaunchArgs(launchArgs)...)
 	return config.SanitizeChromeExtraFlags(strings.Join(flags, " "))
 }
 

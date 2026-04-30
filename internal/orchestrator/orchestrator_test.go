@@ -272,7 +272,7 @@ func TestOrchestrator_Launch_ReservesDistinctChromeDebugPort(t *testing.T) {
 	}
 }
 
-func TestOrchestrator_Launch_PinchtabProxyUsesLocalWrapper(t *testing.T) {
+func TestOrchestrator_Launch_CloakBinaryUsesDirectProxy(t *testing.T) {
 	old := processAliveFunc
 	processAliveFunc = func(pid int) bool { return pid > 0 }
 	defer func() { processAliveFunc = old }()
@@ -348,6 +348,65 @@ func TestOrchestrator_Launch_PinchtabProxyUsesLocalWrapper(t *testing.T) {
 	}
 	if strings.Contains(fc.Browser.ChromeExtraFlags, "--remote-debugging-port=9222") {
 		t.Fatalf("child extraFlags = %q, should not include reserved debug port", fc.Browser.ChromeExtraFlags)
+	}
+
+	processAliveFunc = func(pid int) bool { return false }
+	if err := o.Stop(inst.ID); err != nil {
+		t.Fatalf("Stop failed: %v", err)
+	}
+}
+
+func TestOrchestrator_Launch_StandardPinchtabProxyUsesLocalWrapper(t *testing.T) {
+	old := processAliveFunc
+	processAliveFunc = func(pid int) bool { return pid > 0 }
+	defer func() { processAliveFunc = old }()
+	stubPortAvailability(t, func(int) bool { return true })
+
+	runner := &mockRunner{portAvail: true}
+	o := NewOrchestratorWithRunner(t.TempDir(), runner)
+	o.ApplyRuntimeConfig(&config.RuntimeConfig{
+		Token:             "child-token",
+		InstancePortStart: 9900,
+		InstancePortEnd:   9903,
+		ChromeBinary:      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+	})
+
+	pm := profiles.NewProfileManager(t.TempDir())
+	if err := pm.CreateWithMeta("proxy-profile", profiles.ProfileMeta{
+		Backend: &bridge.ProfileBackend{
+			Kind: "pinchtab",
+			PinchTab: &bridge.ProfileBackendPinchTab{
+				ProxyURL: "http://proxy.local:3128",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("CreateWithMeta failed: %v", err)
+	}
+	o.SetProfileManager(pm)
+
+	inst, err := o.Launch("proxy-profile", "", true, nil)
+	if err != nil {
+		t.Fatalf("Launch failed: %v", err)
+	}
+
+	cfgPath := envMap(runner.env)["PINCHTAB_CONFIG"]
+	if cfgPath == "" {
+		t.Fatal("PINCHTAB_CONFIG missing from child env")
+	}
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("ReadFile(%q) error = %v", cfgPath, err)
+	}
+
+	var fc config.FileConfig
+	if err := json.Unmarshal(data, &fc); err != nil {
+		t.Fatalf("Unmarshal child config error = %v", err)
+	}
+	if fc.Browser.ProxyURL == "http://proxy.local:3128" {
+		t.Fatalf("child config proxyUrl = %q, want local wrapper URL", fc.Browser.ProxyURL)
+	}
+	if !strings.HasPrefix(fc.Browser.ProxyURL, "http://127.0.0.1:") {
+		t.Fatalf("child config proxyUrl = %q, want local wrapper URL", fc.Browser.ProxyURL)
 	}
 
 	processAliveFunc = func(pid int) bool { return false }

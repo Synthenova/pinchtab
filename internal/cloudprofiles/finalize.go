@@ -216,7 +216,7 @@ func runFinalize(ctx context.Context, profilePath string, session *Session, setS
 		return err
 	}
 	if session.Config.KeepLocalCache != nil && !*session.Config.KeepLocalCache {
-		if err := clearProfileData(profilePath); err != nil {
+		if err := clearPortableState(profilePath); err != nil {
 			return err
 		}
 	}
@@ -437,7 +437,7 @@ func DiscardFinalize(ctx context.Context, profilePath string, cfg *bridge.Profil
 	} else if lease, ok, err := client.currentLease(ctx); err == nil && ok {
 		_ = client.ReleaseLease(ctx, lease.LeaseID)
 	}
-	if err := clearProfileData(profilePath); err != nil {
+	if err := clearPortableState(profilePath); err != nil {
 		return err
 	}
 	state := readLocalState(profilePath)

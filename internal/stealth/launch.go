@@ -12,6 +12,15 @@ type LaunchContract struct {
 }
 
 func BuildLaunchContract(cfg *config.RuntimeConfig, level Level) LaunchContract {
+	if UsesCloakBrowserBinary(cfg) {
+		return LaunchContract{
+			Args: []string{"--no-sandbox"},
+			Flags: map[string]bool{
+				"cloakBinary": true,
+			},
+		}
+	}
+
 	persona := BrowserPersona{}
 	if cfg != nil {
 		persona = BuildPersona(cfg.UserAgent, cfg.ChromeVersion)

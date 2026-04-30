@@ -144,7 +144,7 @@ func downloadVersionWithProgress(ctx context.Context, client *Client, versionID,
 }
 
 func extractArchiveWithProgress(archivePath, dest string, update func(done, total int64)) error {
-	if err := clearProfileData(dest); err != nil {
+	if err := clearPortableState(dest); err != nil {
 		return err
 	}
 	f, err := os.Open(archivePath)

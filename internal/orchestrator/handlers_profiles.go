@@ -42,6 +42,13 @@ func (o *Orchestrator) handleStartByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	proxyURL, extensionPaths := o.resolveSteelLaunchDefaults(name, req.ProxyURL, nil)
+	if err := o.ensureProfileStartable(name); err != nil {
+		if writeLaunchError(w, err) {
+			return
+		}
+		httpx.Error(w, classifyLaunchError(err), err)
+		return
+	}
 	inst, err := o.LaunchWithOptions(name, req.Port, req.Headless, extensionPaths, proxyURL)
 	if err != nil {
 		if writeLaunchError(w, err) {

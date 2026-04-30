@@ -132,10 +132,17 @@ func chromeVersionOrFallback(chromeVersion string) string {
 	return "144.0.0.0"
 }
 
-func UseNativeUserAgent(cfg *config.RuntimeConfig) bool {
-	if cfg == nil || strings.TrimSpace(cfg.UserAgent) != "" {
+func UsesCloakBrowserBinary(cfg *config.RuntimeConfig) bool {
+	if cfg == nil {
 		return false
 	}
 	binary := strings.ToLower(strings.TrimSpace(cfg.ChromeBinary))
 	return strings.Contains(binary, ".cloakbrowser") && strings.Contains(binary, "chromium-")
+}
+
+func UseNativeUserAgent(cfg *config.RuntimeConfig) bool {
+	if cfg == nil || strings.TrimSpace(cfg.UserAgent) != "" {
+		return false
+	}
+	return UsesCloakBrowserBinary(cfg)
 }
